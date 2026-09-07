@@ -115,6 +115,9 @@ th, td { padding: 11px 8px; border-bottom: 1px solid #edf1f5; }
 tbody tr:last-child td { border-bottom: 0; }
 td { color: #48566b; white-space: nowrap; }
 td:first-child { color: var(--ink); font-weight: 650; }
+.card-name-cell { min-width: 175px; }
+.card-name-cell strong { color: var(--ink); font-weight: 750; }
+.card-id-cell { color: var(--muted); font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; }
 .empty-cell { padding: 25px 8px; color: var(--muted); text-align: center; }
 .result-win { color: var(--green); font-weight: 800; }
 .result-loss { color: var(--red); font-weight: 800; }

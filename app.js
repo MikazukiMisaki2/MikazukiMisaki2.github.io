@@ -1,5 +1,8 @@
 const API_BASE = "https://sephies-lab-upload.mikazukimisakijp.workers.dev";
 const SUMMARY_URL = `${API_BASE}/api/summary?limit=500`;
+const CARD_NAMES_URL = "./card-names.json";
+
+let cardNames = Object.create(null);
 
 const $ = (id) => document.getElementById(id);
 
@@ -10,6 +13,18 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function cardName(cardId) {
+  const rawId = String(cardId ?? "");
+  if (cardNames[rawId]) return cardNames[rawId];
+  const numericId = Number(rawId);
+  if (Number.isFinite(numericId)) {
+    const baseId = String(Math.floor(numericId / 10) * 10);
+    if (cardNames[baseId]) return cardNames[baseId];
+  }
+  const variantId = rawId.replace(/@\d+$/, "");
+  return cardNames[variantId] || "未知卡牌";
 }
 
 function percent(value) {
@@ -138,7 +153,7 @@ function renderMatchups(data) {
 function renderCards(data) {
   const rows = data.cards || [];
   $("cards-table").innerHTML = rows.length ? rows.slice(0, 14).map((row) => `
-    <tr><td>${escapeHtml(row.cardId)}</td><td>${row.games}</td><td>${percent(row.winRate)}</td><td>${row.wins} / ${row.losses}</td></tr>`).join("") : '<tr><td colspan="4" class="empty-cell">暂无关键牌数据</td></tr>';
+    <tr><td class="card-name-cell"><strong>${escapeHtml(cardName(row.cardId))}</strong></td><td class="card-id-cell">${escapeHtml(row.cardId)}</td><td>${row.games}</td><td>${percent(row.winRate)}</td><td>${row.wins} / ${row.losses}</td></tr>`).join("") : '<tr><td colspan="5" class="empty-cell">暂无关键牌数据</td></tr>';
 }
 
 function renderTurns(data) {
@@ -176,6 +191,7 @@ async function loadSummary() {
   $("error-box").hidden = true;
   setConnection("", "正在读取对局分析…");
   try {
+    await loadCardNames();
     const response = await fetch(SUMMARY_URL, { headers: { Accept: "application/json" } });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `分析服务返回 ${response.status}`);
@@ -189,6 +205,17 @@ async function loadSummary() {
   } finally {
     button.disabled = false;
     button.innerHTML = '<span aria-hidden="true">↻</span> 刷新数据';
+  }
+}
+
+async function loadCardNames() {
+  try {
+    const response = await fetch(CARD_NAMES_URL, { cache: "no-store", headers: { Accept: "application/json" } });
+    if (!response.ok) return;
+    const payload = await response.json();
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) cardNames = payload;
+  } catch {
+    // The analysis page remains usable with IDs if the optional lookup file is unavailable.
   }
 }
 
