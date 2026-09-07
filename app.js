@@ -1,8 +1,10 @@
 const API_BASE = "https://sephies-lab-upload.mikazukimisakijp.workers.dev";
 const SUMMARY_URL = `${API_BASE}/api/summary?limit=1000`;
 const CARD_NAMES_URL = "./card-names.json";
+const CORE_CARD_ART_URL = "./assets/core-card-art.json";
 
 let cardNames = Object.create(null);
+let coreCardArt = Object.create(null);
 let currentData = null;
 let metaSort = "balancedScore";
 let trendClass = "";
@@ -68,6 +70,20 @@ function cardName(cardId) {
   return cardNames[variantId] || "未知卡牌";
 }
 
+function coreCardArtKey(cardId) {
+  const rawId = String(cardId ?? "").trim();
+  return rawId.length === 9 && rawId.endsWith("0") ? rawId.slice(0, -1) : rawId;
+}
+
+function coreCardArtUrl(cardId) {
+  const candidates = Array.isArray(cardId) ? cardId : [cardId];
+  for (const candidate of candidates) {
+    const key = coreCardArtKey(candidate);
+    if (key && typeof coreCardArt[key] === "string" && coreCardArt[key]) return coreCardArt[key];
+  }
+  return "";
+}
+
 function percent(value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return "—";
   return `${(Number(value) * 100).toFixed(1)}%`;
@@ -117,7 +133,12 @@ function usageMarker(row, index, kind) {
     ? CLASS_GLYPHS[String(row?.classId)] || "?"
     : "◆";
   const iconUrl = kind === "class" ? classIconUrl(row?.classId) : "";
-  const content = iconUrl ? `<img src="${iconUrl}" alt="">` : escapeHtml(glyph);
+  const artUrl = coreCardArtUrl(row?.coreCardIds || row?.coreCardId);
+  const content = artUrl
+    ? `<img class="usage-marker-art" src="${escapeHtml(artUrl)}" alt="">`
+    : iconUrl
+      ? `<img src="${iconUrl}" alt="">`
+      : escapeHtml(glyph);
   return `<span class="usage-marker ${kind === "class" ? "usage-marker-class" : "usage-marker-deck"}" style="--marker-color:${color}" aria-hidden="true">${content}</span>`;
 }
 
@@ -276,12 +297,69 @@ function renderUsagePie(pieId, legendId, rows, data, kind) {
   });
   pie.style.setProperty("--pie-gradient", `conic-gradient(from -90deg, ${stops.join(", ")})`);
   pie.setAttribute("aria-label", `${kind === "class" ? "职业" : "卡组"}使用率饼图，共 ${total} 场`);
-  pie.innerHTML = `<div class="usage-pie-total"><strong>${total.toLocaleString("zh-CN")}</strong><span>场</span></div>`;
+  pie.innerHTML = `${renderPieSvg(pieId, visible, total, kind)}<div class="usage-pie-total"><strong>${total.toLocaleString("zh-CN")}</strong><span>场</span></div>`;
   legend.innerHTML = visible.map((row, index) => {
     const name = kind === "class" ? row.className || row.name : row.name;
     const rate = usageRate(row, data);
     return `<div class="usage-legend-row" title="${escapeHtml(name)}"><span>${usageMarker(row, index, kind)}</span><span class="usage-legend-name">${escapeHtml(name)}</span><span class="usage-legend-value">${percent(rate)}<small>${row.games ?? 0}场</small></span></div>`;
   }).join("");
+}
+
+function piePoint(angle, radius = 50) {
+  const radians = angle * Math.PI / 180;
+  return { x: 50 + Math.cos(radians) * radius, y: 50 + Math.sin(radians) * radius };
+}
+
+function pieWedgePath(startAngle, endAngle) {
+  const start = piePoint(startAngle);
+  const end = piePoint(endAngle);
+  const largeArc = endAngle - startAngle >= 180 ? 1 : 0;
+  return `M 50 50 L ${start.x.toFixed(3)} ${start.y.toFixed(3)} A 50 50 0 ${largeArc} 1 ${end.x.toFixed(3)} ${end.y.toFixed(3)} Z`;
+}
+
+function sliceArtOffset(startAngle, spanAngle) {
+  const span = Math.min(360, Math.abs(spanAngle));
+  let fraction;
+  if (span >= 330) {
+    fraction = 0;
+  } else if (span >= 180) {
+    fraction = Math.max(0.06, 0.24 - (span - 180) / 500);
+  } else {
+    fraction = Math.min(0.30, Math.max(0.20, 0.42 - span / 600));
+  }
+  const shift = 50 * fraction;
+  const midpoint = (startAngle + spanAngle / 2) * Math.PI / 180;
+  return {
+    dx: Math.cos(midpoint) * shift,
+    dy: Math.sin(midpoint) * shift,
+    overscan: shift + 50 * 0.06,
+  };
+}
+
+function renderPieSvg(pieId, rows, total, kind) {
+  const prefix = `pie-${String(pieId).replace(/[^a-z0-9_-]/gi, "-")}`;
+  const backgrounds = [];
+  const clips = [];
+  const arts = [];
+  const separators = [];
+  let cursor = -90;
+  rows.forEach((row, index) => {
+    const span = Number(row.games || 0) / total * 360;
+    const end = cursor + span;
+    const path = pieWedgePath(cursor, end);
+    const clipId = `${prefix}-slice-${index}`;
+    backgrounds.push(`<path d="${path}" fill="${chartColor(row, index, kind)}"></path>`);
+    clips.push(`<clipPath id="${clipId}"><path d="${path}"></path></clipPath>`);
+    const artUrl = coreCardArtUrl(row.coreCardIds || row.coreCardId);
+    if (artUrl) {
+      const offset = sliceArtOffset(cursor, span);
+      const size = 100 + offset.overscan * 2;
+      arts.push(`<image href="${escapeHtml(artUrl)}" x="${(-offset.overscan + offset.dx).toFixed(3)}" y="${(-offset.overscan + offset.dy).toFixed(3)}" width="${size.toFixed(3)}" height="${size.toFixed(3)}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clipId})"></image>`);
+    }
+    separators.push(`<path d="${path}" fill="none" stroke="#edf4f8" stroke-width="0.65" stroke-linejoin="round"></path>`);
+    cursor = end;
+  });
+  return `<svg viewBox="0 0 100 100" aria-hidden="true" focusable="false" preserveAspectRatio="xMidYMid meet"><defs>${clips.join("")}</defs>${backgrounds.join("")}${arts.join("")}${separators.join("")}</svg>`;
 }
 
 function renderUsage(data) {
@@ -347,7 +425,7 @@ async function loadSummary() {
   $("error-box").hidden = true;
   setConnection("", "正在读取对局分析…");
   try {
-    await loadCardNames();
+    await Promise.all([loadCardNames(), loadCoreCardArt()]);
     const response = await fetch(SUMMARY_URL, { headers: { Accept: "application/json" } });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `分析服务返回 ${response.status}`);
@@ -372,6 +450,17 @@ async function loadCardNames() {
     if (payload && typeof payload === "object" && !Array.isArray(payload)) cardNames = payload;
   } catch {
     // The analysis page remains usable with IDs if the optional lookup file is unavailable.
+  }
+}
+
+async function loadCoreCardArt() {
+  try {
+    const response = await fetch(CORE_CARD_ART_URL, { cache: "no-store", headers: { Accept: "application/json" } });
+    if (!response.ok) return;
+    const payload = await response.json();
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) coreCardArt = payload;
+  } catch {
+    // The charts remain usable with the same solid-color fallback as before.
   }
 }
 function encodeKey(value) {

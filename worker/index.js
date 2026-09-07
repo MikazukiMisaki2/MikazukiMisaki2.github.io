@@ -193,6 +193,17 @@ function coreId(record) {
   return record?.self_core_card_id ?? record?.deck?.core ?? record?.deck?.core_card_id ?? null;
 }
 
+function addRepresentativeCoreCard(bucket, record) {
+  const candidates = [coreId(record), ...deckCards(record).map(([cardId]) => cardId)];
+  if (!Array.isArray(bucket.coreCardIds)) bucket.coreCardIds = [];
+  for (const candidate of candidates) {
+    const value = asNumber(candidate);
+    if (!Number.isInteger(value) || value <= 0) continue;
+    if (!bucket.coreCardIds.includes(value) && bucket.coreCardIds.length < 32) bucket.coreCardIds.push(value);
+    if (bucket.coreCardId === undefined || bucket.coreCardId === null) bucket.coreCardId = value;
+  }
+}
+
 function cardIds(record) {
   return deckCards(record).map((item) => item[0]).filter((id) => id !== null && id !== undefined);
 }
@@ -307,6 +318,7 @@ function analysisBucket(key, label, metadata = {}) {
 
 function addAnalysisOutcome(bucket, record, result, turn) {
   addOutcome(bucket, record, result, turn);
+  addRepresentativeCoreCard(bucket, record);
   const side = sideOf(record);
   if (side && bucket.sideBuckets?.[side]) addOutcome(bucket.sideBuckets[side], record, result, turn);
 }
@@ -541,6 +553,7 @@ function buildSummary(records, source) {
 
     if (!decks.has(deckKey)) decks.set(deckKey, outcomeBucket(deckKey, deck));
     addOutcome(decks.get(deckKey), record, result, turn);
+    addRepresentativeCoreCard(decks.get(deckKey), record);
     decks.get(deckKey).classId = ownId;
     decks.get(deckKey).className = className(ownId);
     decks.get(deckKey).archetype = deck;
@@ -561,6 +574,7 @@ function buildSummary(records, source) {
     const ownClassKey = String(ownId ?? "?");
     if (!classUsage.has(ownClassKey)) classUsage.set(ownClassKey, outcomeBucket(ownClassKey, className(ownId)));
     addOutcome(classUsage.get(ownClassKey), record, result, turn);
+    addRepresentativeCoreCard(classUsage.get(ownClassKey), record);
     classUsage.get(ownClassKey).classId = ownId;
 
     if (!matchups.has(matchupKey)) matchups.set(matchupKey, outcomeBucket(matchupKey, deck));

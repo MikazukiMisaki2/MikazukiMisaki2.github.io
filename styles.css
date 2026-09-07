@@ -184,6 +184,7 @@ td:first-child { color: var(--ink); font-weight: 650; }
 .usage-chart-heading span { color: #9db6c9; font-size: 10px; }
 .usage-chart-layout { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(150px, 1.1fr); gap: 15px; align-items: center; min-height: 246px; }
 .usage-pie { position: relative; width: min(100%, 218px); aspect-ratio: 1; justify-self: center; border: 1px solid #edf4f8; border-radius: 50%; background: var(--pie-gradient, #dfe6eb); box-shadow: 0 0 0 1px rgba(255,255,255,.10), 0 10px 22px rgba(0,0,0,.18); }
+.usage-pie > svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; }
 .usage-pie::after { content: ""; position: absolute; inset: 0; border: 1px solid rgba(255,255,255,.30); border-radius: inherit; pointer-events: none; }
 .usage-pie-total { position: absolute; inset: 50% auto auto 50%; display: grid; min-width: 66px; min-height: 66px; place-content: center; transform: translate(-50%, -50%); color: #f4e8c7; text-align: center; pointer-events: none; }
 .usage-pie-total strong { font-size: 22px; line-height: 1; }
@@ -192,6 +193,7 @@ td:first-child { color: var(--ink); font-weight: 650; }
 .usage-legend-row { display: grid; grid-template-columns: 17px minmax(0, 1fr) auto; gap: 6px; align-items: center; min-width: 0; color: #e7edf2; font-size: 11px; }
 .usage-marker { display: grid; width: 15px; height: 15px; place-items: center; color: var(--marker-color); border: 1px solid color-mix(in srgb, var(--marker-color) 70%, #fff 30%); border-radius: 4px; font-size: 11px; font-weight: 850; line-height: 1; }
 .usage-marker img { width: 15px; height: 15px; object-fit: contain; }
+.usage-marker .usage-marker-art { object-fit: cover; border-radius: 50%; }
 .usage-marker-class { border: 0; border-radius: 0; font-size: 0; }
 .usage-marker-deck { border-radius: 50%; font-size: 8px; }
 .usage-legend-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
