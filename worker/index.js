@@ -77,19 +77,38 @@ function finalizeBucket(bucket) {
   };
 }
 
-function deckName(record) {
+function cleanLabel(value, fallback = "未命名卡组") {
+  return typeof value === "string" && value.trim() ? value.trim().replace(/\s+/g, " ").slice(0, 128) : fallback;
+}
+
+function normalizedLabel(value) {
+  return cleanLabel(value, "").toLocaleLowerCase("zh-CN");
+}
+
+function deckArchetype(record) {
   const deck = record?.deck;
-  if (deck && typeof deck.name === "string" && deck.name.trim()) return deck.name.trim().slice(0, 128);
-  if (deck && typeof deck.k === "string" && deck.k.trim()) return `卡组 ${deck.k.slice(0, 12)}`;
-  return "未命名卡组";
+  return cleanLabel(
+    deck?.archetype ?? deck?.a ?? deck?.group ?? deck?.type ?? deck?.deck_name ?? deck?.name
+      ?? record?.deck_archetype ?? record?.deck_name,
+    "未命名卡组",
+  );
+}
+
+function deckName(record) {
+  return deckArchetype(record);
 }
 
 function ownClass(record) {
-  return classId(record?.deck?.cl ?? record?.p?.[0]?.c);
+  return classId(record?.deck?.cl ?? record?.deck?.class_id ?? record?.deck?.classId ?? record?.p?.[0]?.c);
 }
 
 function opponentClass(record) {
   return classId(record?.p?.[1]?.c);
+}
+
+function isUnknownOpponentLabel(value) {
+  const label = normalizedLabel(value);
+  return !label || /其他|未知|未能|无法识别|识别失败|unknown|unrecognized/.test(label);
 }
 
 function recordTimestamp(record) {
@@ -97,23 +116,65 @@ function recordTimestamp(record) {
   return Number.isFinite(value) ? value : null;
 }
 
+function deckArchetypeKey(record) {
+  return `archetype:${normalizedLabel(deckArchetype(record)) || "unknown"}`;
+}
+
 function deckGroupKey(record) {
-  return `${deckName(record)}\u0000${ownClass(record) ?? "?"}`;
+  return `${deckArchetypeKey(record)}\u0000class:${ownClass(record) ?? "?"}`;
+}
+
+function deckCards(record) {
+  const deck = record?.deck;
+  const compact = deck?.c;
+  const verbose = deck?.cards;
+  const cards = Array.isArray(compact) ? compact : verbose;
+  const entries = Array.isArray(cards)
+    ? cards
+    : cards && typeof cards === "object"
+      ? Object.entries(cards).map(([cardId, count]) => [cardId, count])
+      : [];
+  return entries
+    .map((item) => {
+      if (Array.isArray(item) && item.length >= 2) {
+        const cardId = item[0];
+        const count = asNumber(item[1]);
+        return cardId === null || cardId === undefined || count === null || count <= 0 ? null : [cardId, count];
+      }
+      if (!item || typeof item !== "object") return null;
+      const cardId = item.cardId ?? item.card_id ?? item.id ?? item.i;
+      const count = asNumber(item.count ?? item.copies ?? item.n ?? item.amount);
+      return cardId === null || cardId === undefined || count === null || count <= 0 ? null : [cardId, count];
+    })
+    .filter(Boolean)
+    .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
+}
+
+function deckVariantKey(record) {
+  const variant = record?.deck?.k ?? record?.deck?.variant_key ?? record?.deck?.variantId;
+  if (typeof variant === "string" && variant.trim()) return `variant:${variant.trim().slice(0, 128)}`;
+  const cards = deckCards(record);
+  if (cards.length) return `cards:${cards.map(([cardId, count]) => `${cardId}:${count}`).join(",")}`;
+  return `variant:${deckGroupKey(record)}`;
 }
 
 function opponentDeckKey(record) {
-  const profileId = record?.opponent_deck_profile_id;
-  if (typeof profileId === "string" && profileId.trim()) return `profile:${profileId.trim().slice(0, 128)}`;
-  const label = record?.opponent_deck_name ?? record?.opponent_deck;
-  if (typeof label === "string" && label.trim()) return `name:${label.trim().slice(0, 128)}`;
+  const recognized = recognizedOpponentDeckKey(record);
+  if (recognized) return recognized;
   return `class:${opponentClass(record) ?? "?"}`;
 }
 
+function recognizedOpponentDeckKey(record) {
+  const label = record?.opponent_deck_archetype ?? record?.opponent_deck_name ?? record?.opponent_deck
+    ?? record?.opponent?.deck_archetype ?? record?.opponent?.deck_name;
+  if (typeof label === "string" && label.trim() && !isUnknownOpponentLabel(label)) return `archetype:${normalizedLabel(label)}`;
+  return null;
+}
+
 function opponentDeckLabel(record) {
-  const label = record?.opponent_deck_name ?? record?.opponent_deck;
-  if (typeof label === "string" && label.trim()) return label.trim().slice(0, 128);
-  const profileId = record?.opponent_deck_profile_id;
-  if (typeof profileId === "string" && profileId.trim()) return profileId.trim().slice(0, 128);
+  const label = record?.opponent_deck_archetype ?? record?.opponent_deck_name ?? record?.opponent_deck
+    ?? record?.opponent?.deck_archetype ?? record?.opponent?.deck_name;
+  if (typeof label === "string" && label.trim() && !isUnknownOpponentLabel(label)) return label.trim().slice(0, 128);
   return className(opponentClass(record));
 }
 
@@ -129,13 +190,11 @@ function endingTurn(record) {
 }
 
 function coreId(record) {
-  return record?.self_core_card_id ?? record?.deck?.core ?? null;
+  return record?.self_core_card_id ?? record?.deck?.core ?? record?.deck?.core_card_id ?? null;
 }
 
 function cardIds(record) {
-  const cards = record?.deck?.c;
-  if (!Array.isArray(cards)) return [];
-  return cards.map((item) => Array.isArray(item) ? item[0] : null).filter((id) => id !== null && id !== undefined);
+  return deckCards(record).map((item) => item[0]).filter((id) => id !== null && id !== undefined);
 }
 
 function mulliganIds(record) {
@@ -235,6 +294,215 @@ function coreBucket(map, value) {
   return map.get(key);
 }
 
+function analysisBucket(key, label, metadata = {}) {
+  return {
+    ...outcomeBucket(key, label),
+    ...metadata,
+    sideBuckets: {
+      first: outcomeBucket("first", "先手"),
+      second: outcomeBucket("second", "后手"),
+    },
+  };
+}
+
+function addAnalysisOutcome(bucket, record, result, turn) {
+  addOutcome(bucket, record, result, turn);
+  const side = sideOf(record);
+  if (side && bucket.sideBuckets?.[side]) addOutcome(bucket.sideBuckets[side], record, result, turn);
+}
+
+function compactBucket(bucket) {
+  const row = finalizeBucket(bucket);
+  delete row.turnTotal;
+  return row;
+}
+
+function finalizeAnalysisBucket(bucket) {
+  const row = compactBucket(bucket);
+  delete row.sideBuckets;
+  delete row.matchups;
+  delete row.opponentClasses;
+  delete row.cards;
+  return {
+    ...row,
+    side: {
+      first: compactBucket(bucket.sideBuckets.first),
+      second: compactBucket(bucket.sideBuckets.second),
+    },
+  };
+}
+
+function sortedAnalysisBuckets(map, total) {
+  return [...map.values()]
+    .map((bucket) => ({ ...finalizeAnalysisBucket(bucket), usageRate: shareOf(bucket.games, total) }))
+    .sort((a, b) => b.games - a.games || (b.winRate || 0) - (a.winRate || 0) || String(a.name).localeCompare(String(b.name)));
+}
+
+function buildAnalysisScopes(records) {
+  const maps = {
+    classes: new Map(),
+    decks: new Map(),
+    deckClasses: new Map(),
+    variants: new Map(),
+  };
+
+  for (const record of records) {
+    const result = resultOf(record);
+    const turn = endingTurn(record);
+    const ownId = ownClass(record);
+    const deckKey = deckGroupKey(record);
+    const variantKey = deckVariantKey(record);
+    const archetype = deckArchetype(record);
+    const metadata = {
+      classId: ownId,
+      className: className(ownId),
+      archetype,
+      archetypeKey: deckArchetypeKey(record),
+      deckKey,
+      variantKey,
+    };
+    const entries = [
+      ["classes", String(ownId ?? "?"), className(ownId), { classId: ownId }],
+      ["decks", deckKey, archetype, metadata],
+      ["deckClasses", `${String(ownId ?? "?")}\u0000${deckKey}`, archetype, metadata],
+      ["variants", variantKey, archetype, metadata],
+    ];
+    for (const [mapName, key, label, extra] of entries) {
+      const map = maps[mapName];
+      if (!map.has(key)) map.set(key, analysisBucket(key, label, extra));
+      addAnalysisOutcome(map.get(key), record, result, turn);
+    }
+  }
+
+  const total = records.length;
+  return {
+    classes: sortedAnalysisBuckets(maps.classes, total),
+    decks: sortedAnalysisBuckets(maps.decks, total),
+    deckClasses: sortedAnalysisBuckets(maps.deckClasses, total),
+    variants: sortedAnalysisBuckets(maps.variants, total),
+  };
+}
+
+function buildDeckCatalog(records, total) {
+  const typeBuckets = new Map();
+  const variantBuckets = new Map();
+  const typeVariants = new Map();
+
+  for (const record of records) {
+    const result = resultOf(record);
+    const turn = endingTurn(record);
+    const typeKey = deckGroupKey(record);
+    const variantKey = deckVariantKey(record);
+    const archetype = deckArchetype(record);
+    const ownId = ownClass(record);
+    const metadata = {
+      classId: ownId,
+      className: className(ownId),
+      archetype,
+      archetypeKey: deckArchetypeKey(record),
+      deckKey: typeKey,
+      variantKey,
+    };
+
+    if (!typeBuckets.has(typeKey)) typeBuckets.set(typeKey, analysisBucket(typeKey, archetype, metadata));
+    addAnalysisOutcome(typeBuckets.get(typeKey), record, result, turn);
+    if (!typeVariants.has(typeKey)) typeVariants.set(typeKey, new Set());
+    typeVariants.get(typeKey).add(variantKey);
+
+    if (!variantBuckets.has(variantKey)) {
+      variantBuckets.set(variantKey, {
+        ...analysisBucket(variantKey, archetype, metadata),
+        cards: deckCards(record),
+        matchups: new Map(),
+        opponentClasses: new Map(),
+      });
+    }
+    const variant = variantBuckets.get(variantKey);
+    addAnalysisOutcome(variant, record, result, turn);
+    // A variant may have older records without a deck snapshot.  Keep the
+    // first non-empty composition so one incomplete upload does not hide the
+    // deck list for every later record of the same build.
+    if (!variant.cards.length) {
+      const cards = deckCards(record);
+      if (cards.length) variant.cards = cards;
+    }
+
+    const opponentKey = opponentDeckKey(record);
+    const matchupKey = `${variantKey}\u0000${opponentKey}`;
+    if (!variant.matchups.has(matchupKey)) {
+      variant.matchups.set(matchupKey, {
+        ...outcomeBucket(matchupKey, opponentDeckLabel(record)),
+        opponentKey,
+        opponent: opponentDeckLabel(record),
+        opponentClass: className(opponentClass(record)),
+        opponentClassId: opponentClass(record),
+      });
+    }
+    addOutcome(variant.matchups.get(matchupKey), record, result, turn);
+
+    const opponentClassKey = String(opponentClass(record) ?? "?");
+    if (!variant.opponentClasses.has(opponentClassKey)) {
+      variant.opponentClasses.set(opponentClassKey, {
+        ...outcomeBucket(opponentClassKey, className(opponentClass(record))),
+        classId: opponentClass(record),
+      });
+    }
+    addOutcome(variant.opponentClasses.get(opponentClassKey), record, result, turn);
+  }
+
+  const variantRows = new Map();
+  for (const [typeKey, variantKeys] of typeVariants) {
+    const orderedKeys = [...variantKeys].sort((left, right) => {
+      const a = variantBuckets.get(left);
+      const b = variantBuckets.get(right);
+      return b.games - a.games || String(left).localeCompare(String(right));
+    });
+    orderedKeys.forEach((variantKey, index) => {
+      const bucket = variantBuckets.get(variantKey);
+      const row = finalizeAnalysisBucket(bucket);
+      const variantMatchups = [...bucket.matchups.values()]
+        .map(compactBucket)
+        .sort((a, b) => b.games - a.games || (b.winRate || 0) - (a.winRate || 0));
+      const opponentClasses = [...bucket.opponentClasses.values()]
+        .map(compactBucket)
+        .sort((a, b) => b.games - a.games || (b.winRate || 0) - (a.winRate || 0));
+      variantRows.set(variantKey, {
+        ...row,
+        label: orderedKeys.length === 1 ? "默认构筑" : `构筑 ${index + 1}`,
+        cards: bucket.cards,
+        matchups: variantMatchups,
+        opponentClasses,
+      });
+    });
+  }
+
+  const types = [...typeBuckets.values()]
+    .map((bucket) => {
+      const row = finalizeAnalysisBucket(bucket);
+      const variants = [...(typeVariants.get(bucket.key) || [])]
+        .map((key) => variantRows.get(key))
+        .filter(Boolean)
+        .map((variant) => ({
+          key: variant.key,
+          label: variant.label,
+          games: variant.games,
+          wins: variant.wins,
+          losses: variant.losses,
+          winRate: variant.winRate,
+        }))
+        .sort((a, b) => b.games - a.games || String(a.label).localeCompare(String(b.label)));
+      return {
+        ...row,
+        usageRate: shareOf(row.games, total),
+        variantCount: variants.length,
+        variants,
+      };
+    })
+    .sort((a, b) => b.games - a.games || (b.winRate || 0) - (a.winRate || 0));
+
+  return { types, variants: [...variantRows.values()] };
+}
+
 function buildSummary(records, source) {
   const complete = records.filter(isComplete);
   const decks = new Map();
@@ -243,6 +511,7 @@ function buildSummary(records, source) {
   const opponents = new Map();
   const opponentDecks = new Map();
   const matchups = new Map();
+  const matrixMatchups = new Map();
   const matrixDecks = new Map();
   const matrixOpponents = new Map();
   const sides = { first: outcomeBucket("first", "先手"), second: outcomeBucket("second", "后手") };
@@ -262,7 +531,9 @@ function buildSummary(records, source) {
     const opponentId = opponentClass(record);
     const opponent = className(opponentId);
     const deckKey = deckGroupKey(record);
+    const archetypeKey = deckArchetypeKey(record);
     const opponentKey = opponentDeckKey(record);
+    const recognizedOpponentKey = recognizedOpponentDeckKey(record);
     const matchupKey = `${deckKey}\u0000${opponentKey}`;
     if (result === "win") wins += 1;
     if (result === "loss") losses += 1;
@@ -272,9 +543,10 @@ function buildSummary(records, source) {
     addOutcome(decks.get(deckKey), record, result, turn);
     decks.get(deckKey).classId = ownId;
     decks.get(deckKey).className = className(ownId);
+    decks.get(deckKey).archetype = deck;
+    decks.get(deckKey).archetypeKey = archetypeKey;
     if (!deckVariants.has(deckKey)) deckVariants.set(deckKey, new Set());
-    const variantKey = record?.deck?.k;
-    if (typeof variantKey === "string" && variantKey.trim()) deckVariants.get(deckKey).add(variantKey.trim());
+    deckVariants.get(deckKey).add(deckVariantKey(record));
 
     const opponentClassKey = String(opponentId ?? "?");
     if (!opponents.has(opponentClassKey)) opponents.set(opponentClassKey, outcomeBucket(opponentClassKey, opponent));
@@ -301,10 +573,29 @@ function buildSummary(records, source) {
     matchups.get(matchupKey).opponentClassId = opponentId;
     matchups.get(matchupKey).ownClass = className(ownId);
 
-    if (!matrixDecks.has(deckKey)) matrixDecks.set(deckKey, { key: deckKey, name: deck, classId: ownId, className: className(ownId), games: 0 });
-    matrixDecks.get(deckKey).games += 1;
-    if (!matrixOpponents.has(opponentKey)) matrixOpponents.set(opponentKey, { key: opponentKey, name: opponentDeckLabel(record), classId: opponentId, className: opponent, games: 0 });
-    matrixOpponents.get(opponentKey).games += 1;
+    // The matrix is intentionally stricter than the general matchup report:
+    // an unidentified opponent deck must not become a fake class column.
+    if (recognizedOpponentKey) {
+      const matrixMatchupKey = `${archetypeKey}\u0000${recognizedOpponentKey}`;
+      if (!matrixMatchups.has(matrixMatchupKey)) {
+        matrixMatchups.set(matrixMatchupKey, {
+          ...outcomeBucket(matrixMatchupKey, deck),
+          deckKey: archetypeKey,
+          deck: deck,
+          archetypeKey,
+          opponentKey: recognizedOpponentKey,
+          opponent: opponentDeckLabel(record),
+          opponentClass: opponent,
+          opponentClassId: opponentId,
+        });
+      }
+      addOutcome(matrixMatchups.get(matrixMatchupKey), record, result, turn);
+
+      if (!matrixDecks.has(archetypeKey)) matrixDecks.set(archetypeKey, { key: archetypeKey, archetypeKey, name: deck, classId: ownId, className: className(ownId), games: 0 });
+      matrixDecks.get(archetypeKey).games += 1;
+      if (!matrixOpponents.has(recognizedOpponentKey)) matrixOpponents.set(recognizedOpponentKey, { key: recognizedOpponentKey, archetypeKey: recognizedOpponentKey, name: opponentDeckLabel(record), classId: opponentId, className: opponent, games: 0 });
+      matrixOpponents.get(recognizedOpponentKey).games += 1;
+    }
 
     const side = sideOf(record);
     if (side) addOutcome(sides[side], record, result, turn);
@@ -357,17 +648,15 @@ function buildSummary(records, source) {
   const matchupRows = sortedBuckets(matchups).map((row) => ({ ...row, usageRate: shareOf(row.games, total) }));
   const matrixDeckRows = [...matrixDecks.values()].sort((a, b) => b.games - a.games || a.name.localeCompare(b.name));
   const matrixOpponentRows = [...matrixOpponents.values()].sort((a, b) => b.games - a.games || a.name.localeCompare(b.name));
-  const matrixCells = matchupRows.map((row) => ({
+  const matrixCells = [...matrixMatchups.values()].map((row) => ({
+    ...compactBucket(row),
     deckKey: row.deckKey,
     deck: row.deck,
+    archetypeKey: row.archetypeKey,
     opponentKey: row.opponentKey,
     opponent: row.opponent,
     opponentClass: row.opponentClass,
     opponentClassId: row.opponentClassId,
-    games: row.games,
-    wins: row.wins,
-    losses: row.losses,
-    winRate: row.winRate,
   }));
   const trends = trendCards(complete);
   const cardsRows = sortedBuckets(cards).map((row) => ({ cardId: row.cardId, games: row.games, wins: row.wins, losses: row.losses, winRate: row.winRate })).slice(0, 40);
@@ -392,8 +681,10 @@ function buildSummary(records, source) {
     }));
 
   const turnsRows = [...turns.values()].sort((a, b) => a.turn - b.turn);
+  const analysisScopes = buildAnalysisScopes(complete);
+  const deckCatalog = buildDeckCatalog(complete, total);
   return {
-    schema: 1,
+    schema: 2,
     generatedAt: new Date().toISOString(),
     source: {
       scannedRecords: source.scannedRecords,
@@ -416,6 +707,8 @@ function buildSummary(records, source) {
     },
     decks: deckRows,
     bestDecks,
+    deckCatalog,
+    analysisScopes,
     classUsage: classUsageRows,
     classWinRate: classWinRateRows,
     opponentClasses: sortedBuckets(opponents),

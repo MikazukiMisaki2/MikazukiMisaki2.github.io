@@ -1,11 +1,49 @@
 const API_BASE = "https://sephies-lab-upload.mikazukimisakijp.workers.dev";
-const SUMMARY_URL = `${API_BASE}/api/summary?limit=500`;
+const SUMMARY_URL = `${API_BASE}/api/summary?limit=1000`;
 const CARD_NAMES_URL = "./card-names.json";
 
 let cardNames = Object.create(null);
 let currentData = null;
 let metaSort = "balancedScore";
 let trendClass = "";
+let selectedClass = "";
+let selectedDeck = "";
+let selectedVariant = "";
+
+const CLASS_NAMES = Object.freeze({
+  1: "精灵",
+  2: "皇家护卫",
+  3: "巫师",
+  4: "龙族",
+  5: "梦魔",
+  6: "主教",
+  7: "超越者",
+});
+
+const CLASS_GLYPHS = Object.freeze({
+  1: "◒",
+  2: "♛",
+  3: "✥",
+  4: "♞",
+  5: "☽",
+  6: "♜",
+  7: "◉",
+});
+
+const CLASS_COLORS = Object.freeze({
+  1: "#439159",
+  2: "#797b1b",
+  3: "#535fa3",
+  4: "#a05a12",
+  5: "#8d1e41",
+  6: "#b0a98d",
+  7: "#5bcce3",
+});
+
+const CHART_COLORS = Object.freeze([
+  "#f6c344", "#58c27d", "#7f9bea", "#e88a42", "#d982d8",
+  "#5bcce3", "#ec6d91", "#b5c5d2", "#f0a05a", "#a9b9ff",
+]);
 
 const $ = (id) => document.getElementById(id);
 
@@ -55,6 +93,45 @@ function usageRate(row, data) {
   if (row?.usageRate !== null && row?.usageRate !== undefined) return Number(row.usageRate);
   const total = Number(data?.overview?.games || 0);
   return total ? Number(row?.games || 0) / total : null;
+}
+
+function classLabel(classId) {
+  return CLASS_NAMES[String(classId)] || `职业 ${classId}`;
+}
+
+function classIconUrl(classId) {
+  const id = String(classId ?? "");
+  return CLASS_NAMES[id] ? `assets/class-${id}.svg` : "";
+}
+
+function chartColor(row, index, kind) {
+  if (kind === "class" && row?.classId !== null && row?.classId !== undefined) {
+    return CLASS_COLORS[String(row.classId)] || CHART_COLORS[index % CHART_COLORS.length];
+  }
+  return CHART_COLORS[index % CHART_COLORS.length];
+}
+
+function usageMarker(row, index, kind) {
+  const color = chartColor(row, index, kind);
+  const glyph = kind === "class"
+    ? CLASS_GLYPHS[String(row?.classId)] || "?"
+    : "◆";
+  const iconUrl = kind === "class" ? classIconUrl(row?.classId) : "";
+  const content = iconUrl ? `<img src="${iconUrl}" alt="">` : escapeHtml(glyph);
+  return `<span class="usage-marker ${kind === "class" ? "usage-marker-class" : "usage-marker-deck"}" style="--marker-color:${color}" aria-hidden="true">${content}</span>`;
+}
+
+function winRateColor(rate, games) {
+  if (!games) return "#dfe6eb";
+  const value = Math.max(0, Math.min(100, Number(rate || 0) * 100));
+  const red = [226, 75, 75];
+  const yellow = [230, 189, 63];
+  const green = [67, 166, 83];
+  const start = value <= 50 ? red : yellow;
+  const end = value <= 50 ? yellow : green;
+  const amount = value <= 50 ? Math.max(0, Math.min(1, (value - 30) / 20)) : Math.max(0, Math.min(1, (value - 50) / 20));
+  const channels = start.map((channel, index) => Math.round(channel + (end[index] - channel) * amount));
+  return `rgb(${channels.join(",")})`;
 }
 
 function tierLabel(value) {
@@ -121,40 +198,6 @@ function renderOverview(data) {
   }
 }
 
-function renderInsights(data) {
-  const overview = data.overview || {};
-  const items = [];
-  const games = Number(overview.games || 0);
-  if (!games) {
-    items.push("还没有可用于统计的完整对局。完成一局后，数据会自动出现在这里。");
-  } else {
-    const bestDeck = (data.decks || []).filter((row) => row.games >= 2).sort((a, b) => b.winRate - a.winRate)[0];
-    const bestOpponent = (data.opponentClasses || []).filter((row) => row.games >= 2).sort((a, b) => b.winRate - a.winRate)[0];
-    const side = overview.side || {};
-    const first = side.first;
-    const second = side.second;
-    if (bestDeck) items.push(`<strong>${escapeHtml(bestDeck.name)}</strong> 当前样本胜率为 ${percent(bestDeck.winRate)}，共 ${bestDeck.games} 场。`);
-    if (bestOpponent) items.push(`对阵 <strong>${escapeHtml(bestOpponent.name)}</strong> 的样本胜率为 ${percent(bestOpponent.winRate)}。`);
-    if (first && second && first.games && second.games) {
-      items.push(`先手 ${percent(first.winRate)}（${first.games} 场），后手 ${percent(second.winRate)}（${second.games} 场）。`);
-    }
-    if (!items.length) items.push("样本仍在积累中，暂时不对卡组强弱下结论。");
-  }
-  $("insight-list").innerHTML = items.map((item) => `<div class="insight-item"><span class="insight-bullet">◆</span><span>${item}</span></div>`).join("");
-}
-
-function renderSide(data) {
-  const side = data.overview?.side || {};
-  const rows = [
-    ["先手", side.first],
-    ["后手", side.second],
-  ];
-  $("side-comparison").innerHTML = rows.map(([label, row]) => {
-    const value = row?.winRate ?? 0;
-    return `<div class="side-row"><span class="side-row-label">${label}</span><div class="bar-track"><div class="bar-fill" style="width:${safeWidth(value)}"></div></div><span class="side-row-value">${percent(row?.winRate)} </span></div>`;
-  }).join("");
-}
-
 function renderBestDecks(data) {
   const rows = (data.bestDecks || data.decks || []).slice().sort((a, b) => {
     const left = Number(a?.[metaSort]);
@@ -193,44 +236,87 @@ function renderTrendingCards(data) {
       : "暂无带时间戳的完整对局，暂时无法计算趋势。";
 }
 
-function renderUsageList(id, rows, data, label) {
-  const container = $(id);
-  const visible = rows.slice().sort((a, b) => (usageRate(b, data) || 0) - (usageRate(a, data) || 0) || Number(b.games || 0) - Number(a.games || 0)).slice(0, 8);
-  const max = Math.max(...visible.map((row) => usageRate(row, data) || 0), 0) || 1;
-  container.innerHTML = visible.length ? visible.map((row) => {
+function renderUsagePie(pieId, legendId, rows, data, kind) {
+  const pie = $(pieId);
+  const legend = $(legendId);
+  const sorted = rows.slice()
+    .filter((row) => Number(row?.games || 0) > 0)
+    .sort((a, b) => (usageRate(b, data) || 0) - (usageRate(a, data) || 0) || Number(b.games || 0) - Number(a.games || 0));
+  const maxVisible = kind === "deck" ? 8 : 7;
+  const visible = sorted.slice(0, maxVisible);
+  const totalGames = Number(data?.overview?.games || sorted.reduce((sum, row) => sum + Number(row.games || 0), 0));
+  const omittedGames = Math.max(0, totalGames - visible.reduce((sum, row) => sum + Number(row.games || 0), 0));
+  if (omittedGames > 0) {
+    visible.push({
+      name: kind === "class" ? "其他职业" : "其他卡组",
+      games: omittedGames,
+      usageRate: totalGames ? omittedGames / totalGames : null,
+    });
+  }
+  const total = visible.reduce((sum, row) => sum + Number(row.games || 0), 0);
+
+  if (!visible.length || !total) {
+    pie.style.setProperty("--pie-gradient", "#dfe6eb");
+    pie.setAttribute("aria-label", "暂无使用率数据");
+    pie.innerHTML = '<div class="usage-pie-total"><strong>—</strong><span>场</span></div>';
+    legend.innerHTML = '<div class="empty-state">暂无数据</div>';
+    return;
+  }
+
+  let cursor = 0;
+  const stops = visible.map((row, index) => {
+    const end = cursor + Number(row.games || 0) / total * 100;
+    const gap = Math.min(0.42, Math.max(0.08, (end - cursor) / 8));
+    const colorEnd = index === visible.length - 1 ? end : Math.max(cursor, end - gap);
+    const stop = index === visible.length - 1
+      ? `${chartColor(row, index, kind)} ${cursor.toFixed(3)}% ${end.toFixed(3)}%`
+      : `${chartColor(row, index, kind)} ${cursor.toFixed(3)}% ${colorEnd.toFixed(3)}%, #edf4f8 ${colorEnd.toFixed(3)}% ${end.toFixed(3)}%`;
+    cursor = end;
+    return stop;
+  });
+  pie.style.setProperty("--pie-gradient", `conic-gradient(from -90deg, ${stops.join(", ")})`);
+  pie.setAttribute("aria-label", `${kind === "class" ? "职业" : "卡组"}使用率饼图，共 ${total} 场`);
+  pie.innerHTML = `<div class="usage-pie-total"><strong>${total.toLocaleString("zh-CN")}</strong><span>场</span></div>`;
+  legend.innerHTML = visible.map((row, index) => {
+    const name = kind === "class" ? row.className || row.name : row.name;
     const rate = usageRate(row, data);
-    const name = label === "class" ? row.className || row.name : row.name;
-    return `<div class="usage-row"><span class="usage-label" title="${escapeHtml(name)}">${escapeHtml(name)}</span><div class="bar-track"><div class="bar-fill" style="width:${safeWidth((rate || 0) / max)}"></div></div><span class="usage-value">${percent(rate)} · ${row.games ?? 0}场</span></div>`;
-  }).join("") : '<div class="empty-state">暂无数据</div>';
+    return `<div class="usage-legend-row" title="${escapeHtml(name)}"><span>${usageMarker(row, index, kind)}</span><span class="usage-legend-name">${escapeHtml(name)}</span><span class="usage-legend-value">${percent(rate)}<small>${row.games ?? 0}场</small></span></div>`;
+  }).join("");
 }
 
 function renderUsage(data) {
-  renderUsageList("class-usage-list", data.classUsage || [], data, "class");
-  renderUsageList("deck-usage-list", data.decks || [], data, "deck");
+  const deckRows = data.deckCatalog?.types || data.decks || [];
+  renderUsagePie("class-usage-pie", "class-usage-list", data.classUsage || [], data, "class");
+  renderUsagePie("deck-usage-pie", "deck-usage-list", deckRows, data, "deck");
 }
 
 function renderClassWinRates(data) {
   const rows = data.classWinRate || data.classUsage || [];
-  $("class-win-rate-list").innerHTML = rows.length ? rows.map((row) => `
-    <article class="class-win-card"><div class="class-win-top"><h3>${escapeHtml(row.className || row.name)}</h3><strong class="class-win-rate">${percent(row.winRate)}</strong></div>
-    <div class="bar-track"><div class="bar-fill" style="width:${safeWidth(row.winRate)}"></div></div>
-    <div class="class-win-foot"><span>${row.wins ?? 0} 胜 / ${row.losses ?? 0} 负</span><span>${row.games ?? 0} 场</span></div></article>`).join("") : '<div class="empty-state">暂无职业胜率数据</div>';
-}
-
-function renderMatchupMatrix(data) {
-  const matrix = data.matchupMatrix || {};
-  const decks = (matrix.decks || []).slice(0, 12);
-  const opponents = (matrix.opponents || []).slice(0, 10);
-  const cellMap = new Map((matrix.cells || []).map((cell) => [`${cell.deckKey}\u0000${cell.opponentKey}`, cell]));
-  $("matchup-matrix-head").innerHTML = `<tr><th>我的卡组</th>${opponents.map((row) => `<th title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</th>`).join("")}</tr>`;
-  if (!decks.length || !opponents.length) {
-    $("matchup-matrix-body").innerHTML = `<tr><td colspan="${Math.max(opponents.length + 1, 2)}" class="empty-cell">暂无足够的对局矩阵数据</td></tr>`;
+  const rowMap = new Map(rows.map((row) => [String(row.classId), row]));
+  const container = $("class-win-rate-list");
+  if (!rows.length) {
+    container.innerHTML = '<div class="empty-state">暂无职业胜率数据</div>';
     return;
   }
-  $("matchup-matrix-body").innerHTML = decks.map((deck) => `<tr><td title="${escapeHtml(deck.name)}"><strong>${escapeHtml(deck.name)}</strong><small class="matrix-class">${escapeHtml(deck.className || "")}</small></td>${opponents.map((opponent) => {
-    const cell = cellMap.get(`${deck.key}\u0000${opponent.key}`);
-    return cell && cell.games ? `<td class="matrix-cell"><div class="matrix-rate">${percent(cell.winRate)}</div><small>${cell.games} 场</small></td>` : '<td class="matrix-cell muted">—</td>';
-  }).join("")}</tr>`).join("");
+
+  const bars = Object.entries(CLASS_NAMES).map(([id, fallbackName]) => {
+    const row = rowMap.get(id) || {};
+    const name = row.className || fallbackName;
+    const games = Number(row.games || 0);
+    const wins = Number(row.wins || 0);
+    const losses = Number(row.losses || 0);
+    const rate = games ? wins / games : Number(row.winRate || 0);
+    const height = games ? Math.max(0, Math.min(100, rate * 100)) : 0;
+    const color = winRateColor(rate, games);
+    const ratio = games ? `${wins}/${games}` : "0/0";
+    return `<div class="class-win-bar" title="${escapeHtml(name)}：${games ? percent(rate) : "暂无数据"}">
+      <div class="class-win-value">${games ? percent(rate) : "—"}</div>
+      <div class="class-win-track"><div class="class-win-fill" style="height:${height.toFixed(1)}%;background:${color}">${height >= 25 ? `<span>${ratio}</span>` : ""}</div></div>
+      <div class="class-win-marker" style="--marker-color:${CLASS_COLORS[id]}">${classIconUrl(id) ? `<img src="${classIconUrl(id)}" alt="">` : escapeHtml(CLASS_GLYPHS[id])}</div>
+      <div class="class-win-name">${escapeHtml(name)}</div>
+    </div>`;
+  }).join("");
+  container.innerHTML = `<div class="class-win-axis" aria-hidden="true"><span>100%</span><span>50%</span><span>0%</span></div><div class="class-win-plot"><div class="class-win-bars">${bars}</div></div>`;
 }
 
 function renderCards(data) {
@@ -252,22 +338,6 @@ function renderRecent(data) {
     const cr = row.crChange === null || row.crChange === undefined ? "—" : `${row.crChange > 0 ? "+" : ""}${row.crChange}`;
     return `<tr><td>${formatDate(row.end || row.at)}</td><td title="${escapeHtml(row.deck)}">${escapeHtml(row.deck)}</td><td title="${escapeHtml(row.opponentDeck || row.opponentClass)}">${escapeHtml(row.opponentDeck || row.opponentClass)}</td><td>${sideLabel(row.side)}</td><td>${resultLabel(row.result)}</td><td>T${escapeHtml(row.turn ?? "—")}</td><td>${cr}</td></tr>`;
   }).join("") : '<tr><td colspan="7" class="empty-cell">暂无已完成对局</td></tr>';
-}
-
-function render(data) {
-  currentData = data;
-  renderOverview(data);
-  renderInsights(data);
-  renderSide(data);
-  renderBestDecks(data);
-  renderTrendingCards(data);
-  renderUsage(data);
-  renderClassWinRates(data);
-  renderMatchupMatrix(data);
-  renderCards(data);
-  renderTurns(data);
-  renderRecent(data);
-  $("api-label").textContent = `分析服务：${API_BASE.replace("https://", "")}`;
 }
 
 async function loadSummary() {
@@ -304,6 +374,324 @@ async function loadCardNames() {
     // The analysis page remains usable with IDs if the optional lookup file is unavailable.
   }
 }
+function encodeKey(value) {
+  return encodeURIComponent(String(value ?? ""));
+}
+
+function decodeKey(value) {
+  try {
+    return decodeURIComponent(value || "");
+  } catch {
+    return value || "";
+  }
+}
+
+function findType(data, key = selectedDeck) {
+  return (data.deckCatalog?.types || []).find((row) => row.key === key)
+    || (data.decks || []).find((row) => row.key === key)
+    || null;
+}
+
+function findVariant(data, key = selectedVariant) {
+  return (data.deckCatalog?.variants || []).find((row) => row.key === key)
+    || (data.analysisScopes?.variants || []).find((row) => row.key === key)
+    || null;
+}
+
+function sideStats(records) {
+  const buckets = {
+    first: { key: "first", name: "先手", games: 0, wins: 0, losses: 0, winRate: null, averageEndingTurn: null },
+    second: { key: "second", name: "后手", games: 0, wins: 0, losses: 0, winRate: null, averageEndingTurn: null },
+  };
+  for (const record of records || []) {
+    const bucket = buckets[record.side];
+    if (!bucket || !["win", "loss"].includes(record.result)) continue;
+    bucket.games += 1;
+    bucket.wins += record.result === "win" ? 1 : 0;
+    bucket.losses += record.result === "loss" ? 1 : 0;
+    bucket._turnTotal = (bucket._turnTotal || 0) + (Number(record.turn) || 0);
+  }
+  for (const bucket of Object.values(buckets)) {
+    bucket.winRate = bucket.games ? bucket.wins / bucket.games : null;
+    bucket.averageEndingTurn = bucket.games ? bucket._turnTotal / bucket.games : null;
+    delete bucket._turnTotal;
+  }
+  return buckets;
+}
+
+function legacyAnalysisScopes(data) {
+  if (data.analysisScopes) return data.analysisScopes;
+  const records = (data.recent || []).filter((record) => ["win", "loss"].includes(record.result));
+  const classRows = (data.classUsage || data.classWinRate || []).filter((row) => row.classId !== null && row.classId !== undefined);
+  const classDeckNames = new Map();
+  for (const deck of data.decks || []) {
+    const key = String(deck.classId);
+    if (!classDeckNames.has(key)) classDeckNames.set(key, new Set());
+    classDeckNames.get(key).add(deck.name);
+  }
+  const classes = classRows.map((row) => ({
+    ...row,
+    side: sideStats(records.filter((record) => String(record.classId) === String(row.classId) || classDeckNames.get(String(row.classId))?.has(record.deck))),
+  }));
+  const decks = (data.decks || []).map((row) => ({
+    ...row,
+    name: row.name || "未命名卡组",
+    side: sideStats(records.filter((record) => record.deck === row.name)),
+  }));
+  const deckClasses = decks.map((row) => ({
+    ...row,
+    key: String(row.classId) + "\u0000" + row.key,
+  }));
+  return { classes, decks, deckClasses, variants: [] };
+}
+
+function selectedScope(data) {
+  const scopes = legacyAnalysisScopes(data);
+  if (selectedVariant) {
+    const row = (scopes.variants || []).find((item) => item.key === selectedVariant);
+    if (row && (!selectedClass || String(row.classId) === String(selectedClass))) {
+      const variant = findVariant(data, selectedVariant);
+      return {
+        row,
+        kind: "variant",
+        label: row.name + (variant?.label ? " · " + variant.label : ""),
+      };
+    }
+  }
+  if (selectedDeck && selectedClass) {
+    const combinedKey = selectedClass + "\u0000" + selectedDeck;
+    const row = (scopes.deckClasses || []).find((item) => item.key === combinedKey);
+    if (!row) return { row: null, kind: "combined", label: "所选职业与卡组没有交集" };
+    return { row, kind: "deck", label: row.name + " · " + (row.className || "未知职业") };
+  }
+  if (selectedDeck) {
+    const row = (scopes.decks || []).find((item) => item.key === selectedDeck);
+    if (row) return { row, kind: "deck", label: row.name };
+  }
+  if (selectedClass) {
+    const row = (scopes.classes || []).find((item) => String(item.classId) === String(selectedClass));
+    if (row) return { row, kind: "class", label: row.name || row.className || "未知职业" };
+  }
+  return null;
+}
+
+function renderScopedOverview(scopeInfo) {
+  const row = scopeInfo?.row;
+  if (!row) return;
+  const games = Number(row.games || 0);
+  $("metric-games").textContent = games.toLocaleString("zh-CN");
+  $("metric-games-foot").textContent = games + " 场筛选样本";
+  $("metric-win-rate").textContent = percent(row.winRate);
+  $("metric-win-rate-foot").textContent = Number(row.wins || 0) + " 胜 / " + Number(row.losses || 0) + " 负";
+  $("metric-record").textContent = Number(row.wins || 0) + " / " + Number(row.losses || 0);
+  $("metric-turn").textContent = number(row.averageEndingTurn, 1);
+}
+
+function scopeMatchups(data, scopeInfo) {
+  if (!scopeInfo?.row) return [];
+  if (scopeInfo.kind === "variant") return findVariant(data, selectedVariant)?.matchups || [];
+  return (data.matchups || []).filter((item) => {
+    if (scopeInfo.kind === "deck" && item.deckKey !== selectedDeck) return false;
+    if (scopeInfo.kind === "deck" && selectedClass && item.ownClass !== scopeInfo.row.className) return false;
+    if (scopeInfo.kind === "class") return item.ownClass === scopeInfo.row.name;
+    return true;
+  });
+}
+
+function renderInsights(data, scopeInfo) {
+  const row = scopeInfo?.row;
+  const items = [];
+  if (!row) {
+    items.push("请选择职业或卡组类型后查看对应的局数、胜负与先后手表现。");
+  } else if (!row.games) {
+    items.push(escapeHtml(scopeInfo.label) + " 暂无完整对局。");
+  } else {
+    items.push("当前范围 <strong>" + escapeHtml(scopeInfo.label) + "</strong>：" + row.games + " 场，胜率 " + percent(row.winRate) + "。");
+    const matchups = scopeMatchups(data, scopeInfo);
+    const best = matchups.filter((item) => item.games >= 2).sort((a, b) => (b.winRate || 0) - (a.winRate || 0))[0];
+    const worst = matchups.filter((item) => item.games >= 2).sort((a, b) => (a.winRate || 0) - (b.winRate || 0))[0];
+    if (best) items.push("当前样本中对阵 <strong>" + escapeHtml(best.opponent || best.name) + "</strong> 胜率最高，为 " + percent(best.winRate) + "。");
+    if (worst && (!best || worst.opponentKey !== best.opponentKey)) items.push("需要留意对阵 <strong>" + escapeHtml(worst.opponent || worst.name) + "</strong>，样本胜率为 " + percent(worst.winRate) + "。");
+    if (row.averageEndingTurn !== null && row.averageEndingTurn !== undefined) items.push("平均结束于 T" + number(row.averageEndingTurn, 1) + "。");
+  }
+  $("insight-list").innerHTML = items.map((item) => '<div class="insight-item"><span class="insight-bullet">◆</span><span>' + item + "</span></div>").join("");
+}
+
+function renderSide(scopeInfo) {
+  const side = scopeInfo?.row?.side || {};
+  const rows = [
+    ["先手", side.first],
+    ["后手", side.second],
+  ];
+  $("side-comparison").innerHTML = rows.map(([label, row]) => {
+    const value = row?.winRate ?? 0;
+    return '<div class="side-row"><span class="side-row-label">' + label + '</span><div class="bar-track"><div class="bar-fill" style="width:' + safeWidth(value) + '"></div></div><span class="side-row-value">' + percent(row?.winRate) + "</span></div>";
+  }).join("");
+}
+
+function renderFilteredAnalysis(data) {
+  const section = $("filtered-analysis");
+  const note = $("selection-note");
+  const scopeInfo = selectedScope(data);
+  if (!scopeInfo) {
+    section.hidden = true;
+    note.textContent = "请选择职业或卡组类型；选择卡组后还可以查看具体构筑。";
+    return;
+  }
+  if (!scopeInfo.row) {
+    section.hidden = true;
+    note.textContent = "当前职业与卡组没有交集，请调整筛选条件。";
+    return;
+  }
+  section.hidden = false;
+  note.textContent = "当前分析范围：" + scopeInfo.label + " · " + scopeInfo.row.games + " 场；下方统计不会把其他卡组混入。";
+  renderScopedOverview(scopeInfo);
+  renderInsights(data, scopeInfo);
+  renderSide(scopeInfo);
+}
+
+function renderAnalysisControls(data) {
+  const classSelect = $("analysis-class");
+  const deckSelect = $("analysis-deck");
+  const variantSelect = $("analysis-variant");
+  const classRows = (data.classUsage || []).filter((row) => row.classId !== null && row.classId !== undefined);
+  if (!classRows.some((row) => String(row.classId) === String(selectedClass))) selectedClass = "";
+  classSelect.innerHTML = '<option value="">全部职业</option>' + classRows.map((row) => '<option value="' + escapeHtml(row.classId) + '">' + escapeHtml(row.className || row.name) + "</option>").join("");
+  classSelect.value = selectedClass;
+
+  const typeRows = data.deckCatalog?.types || data.decks || [];
+  if (!typeRows.some((row) => row.key === selectedDeck)) selectedDeck = "";
+  deckSelect.innerHTML = '<option value="">全部卡组类型</option>' + typeRows.map((row) => {
+    const suffix = row.className ? " · " + row.className : "";
+    return '<option value="' + escapeHtml(encodeKey(row.key)) + '">' + escapeHtml(row.name || "未命名卡组") + escapeHtml(suffix) + "</option>";
+  }).join("");
+  deckSelect.value = encodeKey(selectedDeck);
+
+  const selectedType = findType(data);
+  const variantRows = Array.isArray(selectedType?.variants) ? selectedType.variants : [];
+  if (!variantRows.some((row) => row.key === selectedVariant)) selectedVariant = "";
+  variantSelect.innerHTML = selectedDeck
+    ? '<option value="">按卡组类型汇总</option>' + variantRows.map((row) => '<option value="' + escapeHtml(encodeKey(row.key)) + '">' + escapeHtml(row.label || "构筑") + "</option>").join("")
+    : '<option value="">选择卡组后可选</option>';
+  variantSelect.disabled = !selectedDeck || !variantRows.length;
+  variantSelect.value = encodeKey(selectedVariant);
+}
+
+function renderDeckDetails(data) {
+  const empty = $("deck-detail-empty");
+  const detail = $("deck-detail");
+  const type = findType(data);
+  if (!selectedDeck || !type) {
+    empty.hidden = false;
+    detail.hidden = true;
+    return;
+  }
+  const catalogVariants = data.deckCatalog?.variants || [];
+  const typeVariants = Array.isArray(type.variants) ? type.variants : [];
+  const chosenKey = selectedVariant && typeVariants.some((row) => row.key === selectedVariant)
+    ? selectedVariant
+    : typeVariants[0]?.key;
+  const variant = catalogVariants.find((row) => row.key === chosenKey);
+  empty.hidden = true;
+  detail.hidden = false;
+  $("deck-detail-title").textContent = variant ? type.name + " · " + (variant.label || "构筑") : type.name;
+  $("deck-detail-meta").textContent = (type.className || "未知职业") + " · 卡组类型 " + type.games + " 场 · 汇总胜率 " + percent(type.winRate);
+  $("deck-detail-note").textContent = variant
+    ? selectedVariant ? "当前查看：" + variant.label : "展示 " + variant.label + "；统计仍按卡组类型汇总"
+    : "该记录没有可公开的卡牌构成";
+
+  const cards = variant?.cards || [];
+  $("deck-cards-table").innerHTML = cards.length ? cards.map((item) => {
+    const cardId = Array.isArray(item) ? item[0] : item.cardId;
+    const count = Array.isArray(item) ? item[1] : item.count;
+    return '<tr><td class="card-name-cell"><strong>' + escapeHtml(cardName(cardId)) + '</strong></td><td class="card-id-cell">' + escapeHtml(cardId) + "</td><td>" + escapeHtml(count) + "</td></tr>";
+  }).join("") : '<tr><td colspan="3" class="empty-cell">暂无卡牌构成</td></tr>';
+
+  const matchups = variant?.matchups || [];
+  $("deck-matchups-table").innerHTML = matchups.length ? matchups.slice(0, 20).map((row) => '<tr><td title="' + escapeHtml(row.name || row.opponent) + '"><strong>' + escapeHtml(row.name || row.opponent || "未知对手") + '</strong><small class="table-subline">' + escapeHtml(row.opponentClass || "") + "</small></td><td>" + row.games + "</td><td>" + percent(row.winRate) + "</td><td>" + row.wins + " / " + row.losses + "</td></tr>").join("") : '<tr><td colspan="4" class="empty-cell">暂无对阵数据</td></tr>';
+  const classMatchups = variant?.opponentClasses || [];
+  $("deck-class-matchups-table").innerHTML = classMatchups.length ? classMatchups.slice(0, 12).map((row) => '<tr><td><strong>' + escapeHtml(row.name || "未知职业") + "</strong></td><td>" + row.games + "</td><td>" + percent(row.winRate) + "</td><td>" + row.wins + " / " + row.losses + "</td></tr>").join("") : '<tr><td colspan="4" class="empty-cell">暂无职业对阵数据</td></tr>';
+}
+
+function matrixTone(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "";
+  if (Number(value) >= 0.6) return "matrix-good";
+  if (Number(value) <= 0.4) return "matrix-bad";
+  return "matrix-even";
+}
+
+function matrixLabelKey(value) {
+  const label = String(value ?? "").trim().toLocaleLowerCase("zh-CN").replace(/\s+/g, "");
+  return label && !/其他|未知|未能|无法识别|识别失败|unknown|unrecognized/.test(label)
+    ? `archetype:${label}`
+    : "";
+}
+
+function matrixRowKey(row) {
+  if (typeof row?.archetypeKey === "string" && row.archetypeKey) return row.archetypeKey;
+  if (typeof row?.key === "string" && row.key.startsWith("archetype:")) return row.key;
+  return matrixLabelKey(row?.name);
+}
+
+function renderMatchupMatrix(data) {
+  const matrix = data.matchupMatrix || {};
+  const selectedType = findType(data);
+  const allDecks = matrix.decks || [];
+  const decks = allDecks.filter((row) => {
+    if (selectedClass && String(row.classId) !== String(selectedClass)) return false;
+    if (selectedDeck) {
+      const sameName = selectedType?.name && row.name === selectedType.name;
+      const sameArchetype = selectedType?.archetypeKey && matrixRowKey(row) === selectedType.archetypeKey;
+      if (!sameName && !sameArchetype) return false;
+    }
+    return true;
+  }).slice(0, 12);
+  const opponents = (matrix.opponents || [])
+    .filter((row) => matrixRowKey(row))
+    .slice(0, 10);
+  const cellMap = new Map((matrix.cells || []).map((cell) => [cell.deckKey + "\u0000" + cell.opponentKey, cell]));
+  const diagonal = "-";
+  const matrixTitle = selectedType?.name
+    ? selectedType.name + " \\ 对手类型"
+    : selectedClass
+      ? classLabel(selectedClass) + "卡组 \\ 对手类型"
+      : "卡组类型 \\ 对手类型";
+  $("matchup-matrix-head").innerHTML = '<tr><th>' + escapeHtml(matrixTitle) + '</th>' + opponents.map((row) => '<th title="' + escapeHtml(row.name) + '"><strong>' + escapeHtml(row.name) + '</strong><small class="matrix-class">' + escapeHtml(row.className || "") + "</small></th>").join("") + "</tr>";
+  if (!decks.length || !opponents.length) {
+    $("matchup-matrix-body").innerHTML = '<tr><td colspan="' + Math.max(opponents.length + 1, 2) + '" class="empty-cell">暂无足够的对局矩阵数据</td></tr>';
+    return;
+  }
+  $("matchup-matrix-body").innerHTML = decks.map((deck) => '<tr><td title="' + escapeHtml(deck.name) + '"><strong>' + escapeHtml(deck.name) + '</strong><small class="matrix-class">' + escapeHtml(deck.className || "") + "</small></td>" + opponents.map((opponent) => {
+    if (matrixRowKey(deck) && matrixRowKey(deck) === matrixRowKey(opponent)) return '<td class="matrix-cell matrix-diagonal" title="同种卡组">' + diagonal + "</td>";
+    const cell = cellMap.get(deck.key + "\u0000" + opponent.key);
+    return cell && cell.games ? '<td class="matrix-cell ' + matrixTone(cell.winRate) + '"><div class="matrix-rate">' + percent(cell.winRate) + "</div><small>" + cell.games + " 场</small></td>" : '<td class="matrix-cell muted">—</td>';
+  }).join("") + "</tr>").join("");
+}
+
+function render(data) {
+  currentData = data;
+  renderOverview(data);
+  renderAnalysisControls(data);
+  renderBestDecks(data);
+  renderUsage(data);
+  renderClassWinRates(data);
+  renderFilteredAnalysis(data);
+  renderDeckDetails(data);
+  renderMatchupMatrix(data);
+  renderCards(data);
+  renderTrendingCards(data);
+  renderTurns(data);
+  renderRecent(data);
+  $("api-label").textContent = "分析服务：" + API_BASE.replace("https://", "");
+}
+
+function rerenderSelection() {
+  if (!currentData) return;
+  renderAnalysisControls(currentData);
+  renderFilteredAnalysis(currentData);
+  renderDeckDetails(currentData);
+  renderMatchupMatrix(currentData);
+}
 
 $("refresh-button").addEventListener("click", loadSummary);
 document.querySelectorAll("[data-meta-sort]").forEach((button) => {
@@ -312,6 +700,25 @@ document.querySelectorAll("[data-meta-sort]").forEach((button) => {
     document.querySelectorAll("[data-meta-sort]").forEach((item) => item.classList.toggle("is-active", item === button));
     if (currentData) renderBestDecks(currentData);
   });
+});
+$("analysis-class").addEventListener("change", (event) => {
+  selectedClass = event.target.value;
+  rerenderSelection();
+});
+$("analysis-deck").addEventListener("change", (event) => {
+  selectedDeck = decodeKey(event.target.value);
+  selectedVariant = "";
+  rerenderSelection();
+});
+$("analysis-variant").addEventListener("change", (event) => {
+  selectedVariant = decodeKey(event.target.value);
+  rerenderSelection();
+});
+$("clear-analysis").addEventListener("click", () => {
+  selectedClass = "";
+  selectedDeck = "";
+  selectedVariant = "";
+  rerenderSelection();
 });
 $("trend-class").addEventListener("change", (event) => {
   trendClass = event.target.value;
