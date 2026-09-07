@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Sephie's Lab Shadowverse: Worlds Beyond 对局分析" />
+    <title>Sephie's Lab · 对局分析</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="Sephie's Lab 首页">
+          <span class="brand-mark">S</span>
+          <span>
+            <strong>Sephie's Lab</strong>
+            <small>SHADOWVERSE · WORLDS BEYOND</small>
+          </span>
+        </a>
+        <button class="button button-quiet" id="refresh-button" type="button">
+          <span aria-hidden="true">↻</span> 刷新数据
+        </button>
+      </header>
+
+      <main>
+        <section class="hero">
+          <div class="hero-copy">
+            <p class="eyebrow">MATCH ANALYTICS / COMMUNITY DATA</p>
+            <h1>把每一局，变成下一局的答案。</h1>
+            <p class="hero-text">
+              汇总已上传的匿名对局，观察卡组、先后手、关键牌和结束回合对胜负的影响。
+            </p>
+            <div class="hero-meta">
+              <span class="status-dot" id="connection-dot"></span>
+              <span id="connection-status">正在连接分析服务…</span>
+              <span class="meta-divider">·</span>
+              <span>只统计已完成对局</span>
+            </div>
+          </div>
+          <div class="hero-orbit" aria-hidden="true">
+            <span class="orbit orbit-one"></span>
+            <span class="orbit orbit-two"></span>
+            <span class="orbit-core">◎</span>
+          </div>
+        </section>
+
+        <div class="alert alert-error" id="error-box" role="alert" hidden></div>
+        <div class="alert alert-note" id="sample-note" hidden></div>
+
+        <section class="metric-grid" aria-label="总体数据">
+          <article class="metric-card metric-card-primary">
+            <span class="metric-label">有效对局</span>
+            <strong class="metric-value" id="metric-games">—</strong>
+            <span class="metric-foot" id="metric-games-foot">等待数据</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">总体胜率</span>
+            <strong class="metric-value" id="metric-win-rate">—</strong>
+            <span class="metric-foot" id="metric-win-rate-foot">—</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">胜 / 负</span>
+            <strong class="metric-value" id="metric-record">—</strong>
+            <span class="metric-foot">完成结果</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">平均结束回合</span>
+            <strong class="metric-value" id="metric-turn">—</strong>
+            <span class="metric-foot">越低不代表越好</span>
+          </article>
+        </section>
+
+        <section class="section-grid section-grid-two">
+          <article class="panel insight-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">QUICK READ</p>
+                <h2>当前样本告诉我们</h2>
+              </div>
+              <span class="panel-icon">✦</span>
+            </div>
+            <div class="insight-list" id="insight-list">
+              <div class="loading-line"></div>
+              <div class="loading-line short"></div>
+            </div>
+          </article>
+
+          <article class="panel side-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">FIRST / SECOND</p>
+                <h2>先后手表现</h2>
+              </div>
+            </div>
+            <div class="side-comparison" id="side-comparison">
+              <div class="loading-line"></div>
+              <div class="loading-line"></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="section-grid section-grid-two">
+          <article class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">YOUR DECKS</p>
+                <h2>卡组表现</h2>
+              </div>
+              <span class="panel-caption">按有效对局</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>卡组</th><th>对局</th><th>胜率</th><th>平均回合</th></tr></thead>
+                <tbody id="decks-table"><tr><td colspan="4" class="empty-cell">加载中…</td></tr></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">OPPONENT CLASSES</p>
+                <h2>对手职业</h2>
+              </div>
+              <span class="panel-caption">按有效对局</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>职业</th><th>对局</th><th>胜率</th><th>战绩</th></tr></thead>
+                <tbody id="opponents-table"><tr><td colspan="4" class="empty-cell">加载中…</td></tr></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel wide-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">MATCHUP MAP</p>
+              <h2>卡组对局矩阵</h2>
+            </div>
+            <span class="panel-caption">样本越多，结论越稳定</span>
+          </div>
+          <div class="matchup-grid" id="matchups-grid">
+            <div class="empty-state">加载中…</div>
+          </div>
+        </section>
+
+        <section class="section-grid section-grid-two">
+          <article class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">KEY CARDS</p>
+                <h2>关键牌相关性</h2>
+              </div>
+              <span class="panel-caption">仅表示样本相关性</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>卡牌 ID</th><th>出现对局</th><th>胜率</th><th>战绩</th></tr></thead>
+                <tbody id="cards-table"><tr><td colspan="4" class="empty-cell">加载中…</td></tr></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">ENDING TURNS</p>
+                <h2>结束回合分布</h2>
+              </div>
+            </div>
+            <div class="turn-bars" id="turn-bars">
+              <div class="empty-state">加载中…</div>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel wide-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">RECENT MATCHES</p>
+              <h2>最近完成的对局</h2>
+            </div>
+            <span class="panel-caption" id="updated-at">—</span>
+          </div>
+          <div class="table-wrap">
+            <table class="recent-table">
+              <thead><tr><th>日期</th><th>我的卡组</th><th>对手职业</th><th>先后手</th><th>结果</th><th>回合</th><th>CR 变动</th></tr></thead>
+              <tbody id="recent-table"><tr><td colspan="7" class="empty-cell">加载中…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <span>Sephie's Lab · 数据由本地 Tracker 匿名上传</span>
+        <span id="api-label">分析服务：—</span>
+      </footer>
+    </div>
+  </body>
+</html>
