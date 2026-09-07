@@ -6,7 +6,7 @@
     <meta name="description" content="Sephie's Lab Shadowverse: Worlds Beyond 对局分析" />
     <title>Sephie's Lab · 对局分析</title>
     <link rel="stylesheet" href="styles.css" />
-    <script src="app.js?v=2" defer></script>
+    <script src="app.js?v=3" defer></script>
   </head>
   <body>
     <div class="shell">
@@ -100,36 +100,68 @@
           </article>
         </section>
 
+        <section class="panel wide-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">BEST DECKS / META TIER LIST</p>
+              <h2>Best Decks · Meta Tier List</h2>
+            </div>
+            <span class="panel-caption">按已上传的完整对局自动计算</span>
+          </div>
+          <div class="control-row" id="meta-sort-controls" role="group" aria-label="卡组排序">
+            <button class="filter-button is-active" type="button" data-meta-sort="balancedScore">综合</button>
+            <button class="filter-button" type="button" data-meta-sort="usageScore">使用率</button>
+            <button class="filter-button" type="button" data-meta-sort="winScore">胜率</button>
+          </div>
+          <div class="table-wrap">
+            <table class="meta-table">
+              <thead><tr><th>#</th><th>卡组</th><th>职业</th><th>使用率</th><th>对局</th><th>胜率</th><th>Tier</th></tr></thead>
+              <tbody id="best-decks-table"><tr><td colspan="7" class="empty-cell">加载中…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
         <section class="section-grid section-grid-two">
           <article class="panel">
             <div class="panel-heading">
               <div>
-                <p class="eyebrow">YOUR DECKS</p>
-                <h2>卡组表现</h2>
+                <p class="eyebrow">TRENDING CARDS / META-SHIFTING</p>
+                <h2>Trending Cards · Meta-Shifting</h2>
               </div>
-              <span class="panel-caption">按有效对局</span>
+              <span class="panel-caption">最近 14 天对比前 14 天</span>
+            </div>
+            <div class="toolbar-inline">
+              <label for="trend-class">职业</label>
+              <select id="trend-class">
+                <option value="">全部职业</option>
+              </select>
             </div>
             <div class="table-wrap">
-              <table>
-                <thead><tr><th>卡组</th><th>对局</th><th>胜率</th><th>平均回合</th></tr></thead>
-                <tbody id="decks-table"><tr><td colspan="4" class="empty-cell">加载中…</td></tr></tbody>
+              <table class="trend-table">
+                <thead><tr><th>卡牌</th><th>近期使用</th><th>变化</th><th>近期胜率</th><th>趋势</th></tr></thead>
+                <tbody id="trending-cards-table"><tr><td colspan="5" class="empty-cell">加载中…</td></tr></tbody>
               </table>
             </div>
+            <p class="table-note" id="trend-window-note">—</p>
           </article>
 
           <article class="panel">
             <div class="panel-heading">
               <div>
-                <p class="eyebrow">OPPONENT CLASSES</p>
-                <h2>对手职业</h2>
+                <p class="eyebrow">CLASS &amp; DECK USAGE</p>
+                <h2>Class &amp; Deck Usage</h2>
               </div>
-              <span class="panel-caption">按有效对局</span>
+              <span class="panel-caption">使用率 · 对局数</span>
             </div>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>职业</th><th>对局</th><th>胜率</th><th>战绩</th></tr></thead>
-                <tbody id="opponents-table"><tr><td colspan="4" class="empty-cell">加载中…</td></tr></tbody>
-              </table>
+            <div class="usage-columns">
+              <div class="usage-block">
+                <h3>职业使用率</h3>
+                <div class="usage-list" id="class-usage-list"><div class="empty-state">加载中…</div></div>
+              </div>
+              <div class="usage-block">
+                <h3>卡组使用率</h3>
+                <div class="usage-list" id="deck-usage-list"><div class="empty-state">加载中…</div></div>
+              </div>
             </div>
           </article>
         </section>
@@ -137,13 +169,29 @@
         <section class="panel wide-panel">
           <div class="panel-heading">
             <div>
-              <p class="eyebrow">MATCHUP MAP</p>
+              <p class="eyebrow">CLASS WIN RATE</p>
+              <h2>Class Win Rate</h2>
+            </div>
+            <span class="panel-caption">我方职业 · 完整对局</span>
+          </div>
+          <div class="class-win-grid" id="class-win-rate-list">
+            <div class="empty-state">加载中…</div>
+          </div>
+        </section>
+
+        <section class="panel wide-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">MATCHUP MATRIX</p>
               <h2>卡组对局矩阵</h2>
             </div>
-            <span class="panel-caption">样本越多，结论越稳定</span>
+            <span class="panel-caption">格内为我方胜率 · 括号为对局数</span>
           </div>
-          <div class="matchup-grid" id="matchups-grid">
-            <div class="empty-state">加载中…</div>
+          <div class="matrix-wrap">
+            <table class="matrix-table">
+              <thead id="matchup-matrix-head"><tr><th>我的卡组</th><th>对手</th></tr></thead>
+              <tbody id="matchup-matrix-body"><tr><td colspan="2" class="empty-cell">加载中…</td></tr></tbody>
+            </table>
           </div>
         </section>
 
@@ -187,7 +235,7 @@
           </div>
           <div class="table-wrap">
             <table class="recent-table">
-              <thead><tr><th>日期</th><th>我的卡组</th><th>对手职业</th><th>先后手</th><th>结果</th><th>回合</th><th>CR 变动</th></tr></thead>
+              <thead><tr><th>日期</th><th>我的卡组</th><th>对手卡组 / 职业</th><th>先后手</th><th>结果</th><th>回合</th><th>CR 变动</th></tr></thead>
               <tbody id="recent-table"><tr><td colspan="7" class="empty-cell">加载中…</td></tr></tbody>
             </table>
           </div>

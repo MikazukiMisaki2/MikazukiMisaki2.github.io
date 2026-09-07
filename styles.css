@@ -128,6 +128,52 @@ td:first-child { color: var(--ink); font-weight: 650; }
 .inline-bar span { min-width: 38px; text-align: right; }
 .muted { color: var(--muted); }
 
+.control-row { display: flex; flex-wrap: wrap; gap: 7px; margin: -4px 0 16px; }
+.filter-button { padding: 7px 12px; color: var(--muted); background: #f7f9fc; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; font-size: 11px; transition: .2s ease; }
+.filter-button:hover { color: var(--ink); border-color: #aebed1; }
+.filter-button.is-active { color: #fff; background: var(--navy-soft); border-color: var(--navy-soft); }
+.toolbar-inline { display: flex; align-items: center; gap: 8px; margin: -4px 0 14px; color: var(--muted); font-size: 11px; }
+.toolbar-inline select { min-width: 112px; padding: 7px 25px 7px 9px; color: var(--ink); background: #f7f9fc; border: 1px solid var(--line); border-radius: 8px; font-size: 11px; }
+.meta-table td:nth-child(1) { width: 34px; color: var(--muted); font-weight: 700; }
+.meta-table td:nth-child(2) { min-width: 150px; }
+.rank-cell { font-variant-numeric: tabular-nums; }
+.tier { display: inline-grid; min-width: 28px; height: 24px; place-items: center; padding: 0 7px; border-radius: 7px; font-size: 11px; font-weight: 850; }
+.tier-s { color: #855a11; background: #fff0bb; }
+.tier-a { color: #237258; background: #d9f3e9; }
+.tier-b { color: #2c6491; background: #deeffc; }
+.tier-c { color: #825d6c; background: #f4e5ec; }
+.tier-sample { color: var(--muted); background: #eff2f6; }
+.trend-up { color: var(--green); font-weight: 800; }
+.trend-down { color: var(--red); font-weight: 800; }
+.trend-new { color: var(--violet); font-weight: 800; }
+.trend-neutral { color: var(--muted); font-weight: 700; }
+.stack-cell, .card-label { display: table-cell; }
+.stack-cell small, .card-label small { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; font-weight: 500; }
+.card-label strong { display: block; color: var(--ink); }
+.card-id-inline { font-family: "SFMono-Regular", Consolas, monospace; }
+.table-note { margin: 13px 0 0; color: var(--muted); font-size: 11px; }
+.usage-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+.usage-block h3, .class-win-card h3 { margin: 0 0 13px; font-size: 12px; }
+.usage-list { display: grid; gap: 11px; }
+.usage-row { display: grid; grid-template-columns: minmax(70px, 100px) 1fr auto; gap: 8px; align-items: center; font-size: 11px; }
+.usage-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.usage-value { min-width: 76px; color: var(--muted); text-align: right; }
+.usage-row .bar-track { height: 7px; }
+.class-win-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.class-win-card { padding: 14px; border: 1px solid #e8edf3; border-radius: 12px; background: #fbfcfe; }
+.class-win-top { display: flex; justify-content: space-between; gap: 8px; }
+.class-win-rate { font-size: 18px; font-weight: 800; }
+.class-win-card .bar-track { margin-top: 11px; }
+.class-win-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; color: var(--muted); font-size: 11px; }
+.matrix-wrap { overflow-x: auto; margin: 0 -4px; }
+.matrix-table { min-width: 640px; }
+.matrix-table th, .matrix-table td { text-align: center; vertical-align: middle; }
+.matrix-table th:first-child, .matrix-table td:first-child { min-width: 150px; text-align: left; }
+.matrix-table thead th { max-width: 120px; white-space: normal; line-height: 1.35; }
+.matrix-cell { min-width: 78px; }
+.matrix-rate { font-weight: 800; }
+.matrix-cell small, .matrix-class { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; font-weight: 500; }
+
 .matchup-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
 .matchup-card { padding: 14px; border: 1px solid #e8edf3; border-radius: 12px; background: #fbfcfe; }
 .matchup-top { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
@@ -153,6 +199,7 @@ td:first-child { color: var(--ink); font-weight: 650; }
 @media (max-width: 900px) {
   .hero-orbit { right: -20px; opacity: .55; }
   .metric-grid { grid-template-columns: repeat(2, 1fr); }
+  .class-win-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
   .shell { padding: 0 14px 20px; }
@@ -163,5 +210,8 @@ td:first-child { color: var(--ink); font-weight: 650; }
   .metric-grid, .section-grid-two { grid-template-columns: 1fr; }
   .metric-card { min-height: 108px; }
   .panel { padding: 19px 16px; border-radius: 15px; }
+  .usage-columns { grid-template-columns: 1fr; gap: 20px; }
+  .class-win-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .panel-caption { white-space: normal; text-align: right; }
   .footer { flex-direction: column; }
 }

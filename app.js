@@ -3,6 +3,9 @@ const SUMMARY_URL = `${API_BASE}/api/summary?limit=500`;
 const CARD_NAMES_URL = "./card-names.json";
 
 let cardNames = Object.create(null);
+let currentData = null;
+let metaSort = "balancedScore";
+let trendClass = "";
 
 const $ = (id) => document.getElementById(id);
 
@@ -40,6 +43,31 @@ function number(value, digits = 0) {
 function safeWidth(value) {
   const normalized = Math.max(0, Math.min(100, Number(value || 0) * 100));
   return `${normalized.toFixed(1)}%`;
+}
+
+function deltaPoints(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "—";
+  const points = Number(value) * 100;
+  return `${points > 0 ? "+" : ""}${points.toFixed(1)}pp`;
+}
+
+function usageRate(row, data) {
+  if (row?.usageRate !== null && row?.usageRate !== undefined) return Number(row.usageRate);
+  const total = Number(data?.overview?.games || 0);
+  return total ? Number(row?.games || 0) / total : null;
+}
+
+function tierLabel(value) {
+  const text = String(value || "—");
+  const classKey = text === "S" || text === "A" || text === "B" || text === "C" ? text.toLowerCase() : "sample";
+  return `<span class="tier tier-${classKey}">${escapeHtml(text)}</span>`;
+}
+
+function trendLabel(value) {
+  if (value === "rising") return '<span class="trend-up">上升</span>';
+  if (value === "falling") return '<span class="trend-down">下降</span>';
+  if (value === "new") return '<span class="trend-new">新出现</span>';
+  return '<span class="trend-neutral">稳定</span>';
 }
 
 function resultLabel(value) {
@@ -127,27 +155,82 @@ function renderSide(data) {
   }).join("");
 }
 
-function renderDecks(data) {
-  const rows = data.decks || [];
-  $("decks-table").innerHTML = rows.length ? rows.slice(0, 12).map((row) => `
-    <tr><td title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</td><td>${row.games}</td>
-    <td class="win-rate"><div class="inline-bar"><div class="bar-track"><div class="bar-fill" style="width:${safeWidth(row.winRate)}"></div></div><span>${percent(row.winRate)}</span></div></td>
-    <td>${number(row.averageEndingTurn, 1)}</td></tr>`).join("") : '<tr><td colspan="4" class="empty-cell">暂无数据</td></tr>';
+function renderBestDecks(data) {
+  const rows = (data.bestDecks || data.decks || []).slice().sort((a, b) => {
+    const left = Number(a?.[metaSort]);
+    const right = Number(b?.[metaSort]);
+    return (Number.isFinite(right) ? right : -1) - (Number.isFinite(left) ? left : -1) || Number(b.games || 0) - Number(a.games || 0);
+  });
+  $("best-decks-table").innerHTML = rows.length ? rows.slice(0, 18).map((row, index) => {
+    const rate = usageRate(row, data);
+    return `<tr><td class="rank-cell">${index + 1}</td><td title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</td><td>${escapeHtml(row.className || "—")}</td><td>${percent(rate)}</td><td>${row.games ?? "—"}</td><td>${percent(row.winRate)}</td><td>${tierLabel(row.tier)}</td></tr>`;
+  }).join("") : '<tr><td colspan="7" class="empty-cell">暂无完整对局数据</td></tr>';
 }
 
-function renderOpponents(data) {
-  const rows = data.opponentClasses || [];
-  $("opponents-table").innerHTML = rows.length ? rows.slice(0, 12).map((row) => `
-    <tr><td>${escapeHtml(row.name)}</td><td>${row.games}</td>
-    <td>${percent(row.winRate)}</td><td><span class="result-win">${row.wins}</span> / <span class="result-loss">${row.losses}</span></td></tr>`).join("") : '<tr><td colspan="4" class="empty-cell">暂无数据</td></tr>';
+function renderTrendingCards(data) {
+  const select = $("trend-class");
+  const classRows = (data.classUsage || []).filter((row) => row.classId !== null && row.classId !== undefined);
+  select.innerHTML = '<option value="">全部职业</option>' + classRows.map((row) => `<option value="${escapeHtml(row.classId)}">${escapeHtml(row.className || row.name)}</option>`).join("");
+  if (!classRows.some((row) => String(row.classId) === String(trendClass))) trendClass = "";
+  select.value = trendClass;
+
+  const rows = (data.trendingCards || []).filter((row) => {
+    if (!trendClass) return true;
+    return (row.classIds || []).some((id) => String(id) === String(trendClass));
+  });
+  $("trending-cards-table").innerHTML = rows.length ? rows.slice(0, 14).map((row) => `
+    <tr><td class="card-label"><strong>${escapeHtml(cardName(row.cardId))}</strong><small class="card-id-inline">${escapeHtml(row.cardId)}</small></td>
+    <td class="stack-cell"><strong>${percent(row.recentUsageRate)}</strong><small>${row.recentGames ?? 0} 场</small></td>
+    <td>${deltaPoints(row.usageDelta)}</td><td>${percent(row.recentWinRate)}</td><td>${trendLabel(row.direction)}</td></tr>`).join("") : '<tr><td colspan="5" class="empty-cell">暂无可比较的趋势数据</td></tr>';
+
+  const window = data.trendWindow || {};
+  const recentGames = Number(window.recentGames || 0);
+  const previousGames = Number(window.previousGames || 0);
+  $("trend-window-note").textContent = recentGames && previousGames
+    ? `最近 ${window.recentDays || 14} 天 ${recentGames} 场，对比此前 ${previousGames} 场；变化以使用率百分点（pp）表示。`
+    : recentGames
+      ? `最近 ${window.recentDays || 14} 天有 ${recentGames} 场，但此前没有可比较的对局；趋势会在样本积累后稳定。`
+      : "暂无带时间戳的完整对局，暂时无法计算趋势。";
 }
 
-function renderMatchups(data) {
-  const rows = data.matchups || [];
-  $("matchups-grid").innerHTML = rows.length ? rows.slice(0, 24).map((row) => `
-    <div class="matchup-card"><div class="matchup-top"><span class="matchup-deck" title="${escapeHtml(row.deck)}">${escapeHtml(row.deck)}</span><span class="matchup-rate">${percent(row.winRate)}</span></div>
-    <div class="matchup-opponent">对阵 ${escapeHtml(row.opponent)} · ${row.games} 场 · ${row.wins} 胜 ${row.losses} 负</div>
-    <div class="bar-track"><div class="bar-fill" style="width:${safeWidth(row.winRate)}"></div></div></div>`).join("") : '<div class="empty-state">暂无足够的对局矩阵数据</div>';
+function renderUsageList(id, rows, data, label) {
+  const container = $(id);
+  const visible = rows.slice().sort((a, b) => (usageRate(b, data) || 0) - (usageRate(a, data) || 0) || Number(b.games || 0) - Number(a.games || 0)).slice(0, 8);
+  const max = Math.max(...visible.map((row) => usageRate(row, data) || 0), 0) || 1;
+  container.innerHTML = visible.length ? visible.map((row) => {
+    const rate = usageRate(row, data);
+    const name = label === "class" ? row.className || row.name : row.name;
+    return `<div class="usage-row"><span class="usage-label" title="${escapeHtml(name)}">${escapeHtml(name)}</span><div class="bar-track"><div class="bar-fill" style="width:${safeWidth((rate || 0) / max)}"></div></div><span class="usage-value">${percent(rate)} · ${row.games ?? 0}场</span></div>`;
+  }).join("") : '<div class="empty-state">暂无数据</div>';
+}
+
+function renderUsage(data) {
+  renderUsageList("class-usage-list", data.classUsage || [], data, "class");
+  renderUsageList("deck-usage-list", data.decks || [], data, "deck");
+}
+
+function renderClassWinRates(data) {
+  const rows = data.classWinRate || data.classUsage || [];
+  $("class-win-rate-list").innerHTML = rows.length ? rows.map((row) => `
+    <article class="class-win-card"><div class="class-win-top"><h3>${escapeHtml(row.className || row.name)}</h3><strong class="class-win-rate">${percent(row.winRate)}</strong></div>
+    <div class="bar-track"><div class="bar-fill" style="width:${safeWidth(row.winRate)}"></div></div>
+    <div class="class-win-foot"><span>${row.wins ?? 0} 胜 / ${row.losses ?? 0} 负</span><span>${row.games ?? 0} 场</span></div></article>`).join("") : '<div class="empty-state">暂无职业胜率数据</div>';
+}
+
+function renderMatchupMatrix(data) {
+  const matrix = data.matchupMatrix || {};
+  const decks = (matrix.decks || []).slice(0, 12);
+  const opponents = (matrix.opponents || []).slice(0, 10);
+  const cellMap = new Map((matrix.cells || []).map((cell) => [`${cell.deckKey}\u0000${cell.opponentKey}`, cell]));
+  $("matchup-matrix-head").innerHTML = `<tr><th>我的卡组</th>${opponents.map((row) => `<th title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</th>`).join("")}</tr>`;
+  if (!decks.length || !opponents.length) {
+    $("matchup-matrix-body").innerHTML = `<tr><td colspan="${Math.max(opponents.length + 1, 2)}" class="empty-cell">暂无足够的对局矩阵数据</td></tr>`;
+    return;
+  }
+  $("matchup-matrix-body").innerHTML = decks.map((deck) => `<tr><td title="${escapeHtml(deck.name)}"><strong>${escapeHtml(deck.name)}</strong><small class="matrix-class">${escapeHtml(deck.className || "")}</small></td>${opponents.map((opponent) => {
+    const cell = cellMap.get(`${deck.key}\u0000${opponent.key}`);
+    return cell && cell.games ? `<td class="matrix-cell"><div class="matrix-rate">${percent(cell.winRate)}</div><small>${cell.games} 场</small></td>` : '<td class="matrix-cell muted">—</td>';
+  }).join("")}</tr>`).join("");
 }
 
 function renderCards(data) {
@@ -167,17 +250,20 @@ function renderRecent(data) {
   const rows = data.recent || [];
   $("recent-table").innerHTML = rows.length ? rows.map((row) => {
     const cr = row.crChange === null || row.crChange === undefined ? "—" : `${row.crChange > 0 ? "+" : ""}${row.crChange}`;
-    return `<tr><td>${formatDate(row.end || row.at)}</td><td title="${escapeHtml(row.deck)}">${escapeHtml(row.deck)}</td><td>${escapeHtml(row.opponentClass)}</td><td>${sideLabel(row.side)}</td><td>${resultLabel(row.result)}</td><td>T${escapeHtml(row.turn ?? "—")}</td><td>${cr}</td></tr>`;
+    return `<tr><td>${formatDate(row.end || row.at)}</td><td title="${escapeHtml(row.deck)}">${escapeHtml(row.deck)}</td><td title="${escapeHtml(row.opponentDeck || row.opponentClass)}">${escapeHtml(row.opponentDeck || row.opponentClass)}</td><td>${sideLabel(row.side)}</td><td>${resultLabel(row.result)}</td><td>T${escapeHtml(row.turn ?? "—")}</td><td>${cr}</td></tr>`;
   }).join("") : '<tr><td colspan="7" class="empty-cell">暂无已完成对局</td></tr>';
 }
 
 function render(data) {
+  currentData = data;
   renderOverview(data);
   renderInsights(data);
   renderSide(data);
-  renderDecks(data);
-  renderOpponents(data);
-  renderMatchups(data);
+  renderBestDecks(data);
+  renderTrendingCards(data);
+  renderUsage(data);
+  renderClassWinRates(data);
+  renderMatchupMatrix(data);
   renderCards(data);
   renderTurns(data);
   renderRecent(data);
@@ -220,4 +306,15 @@ async function loadCardNames() {
 }
 
 $("refresh-button").addEventListener("click", loadSummary);
+document.querySelectorAll("[data-meta-sort]").forEach((button) => {
+  button.addEventListener("click", () => {
+    metaSort = button.dataset.metaSort || "balancedScore";
+    document.querySelectorAll("[data-meta-sort]").forEach((item) => item.classList.toggle("is-active", item === button));
+    if (currentData) renderBestDecks(currentData);
+  });
+});
+$("trend-class").addEventListener("change", (event) => {
+  trendClass = event.target.value;
+  if (currentData) renderTrendingCards(currentData);
+});
 loadSummary();
