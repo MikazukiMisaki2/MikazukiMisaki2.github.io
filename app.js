@@ -489,7 +489,7 @@ async function loadSummary() {
   setConnection("", "正在读取对局分析…");
   try {
     await Promise.all([loadCardNames(), loadCoreCardArt()]);
-    const response = await fetch(SUMMARY_URL, { headers: { Accept: "application/json" } });
+    const response = await fetch(SUMMARY_URL, { cache: "no-store", headers: { Accept: "application/json" } });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `分析服务返回 ${response.status}`);
     render(payload);
