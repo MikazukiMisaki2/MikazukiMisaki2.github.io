@@ -1,4 +1,7 @@
-const MAX_UPLOAD_BYTES = 256 * 1024;
+// Replay records can contain a compact checkpoint/event timeline.  Keep the
+// request bound finite while allowing the larger completed records produced
+// by the current tracker to reach the public archive.
+const MAX_UPLOAD_BYTES = 512 * 1024;
 const DEFAULT_READ_LIMIT = 500;
 const MAX_READ_LIMIT = 1000;
 
@@ -1176,6 +1179,12 @@ async function handleUpload(request, env) {
     // Treat this as an accepted no-op so an older client queue cannot retry
     // an out-of-scope match forever.  No Unlimited record is written to R2.
     return jsonResponse({ ok: true, skipped: true, reason: "unlimited" }, 200, "no-store");
+  }
+  if (!isComplete(record)) {
+    // Interrupted/debug records remain local-only.  Accept the request as a
+    // no-op so old clients remove it from their retry queue instead of
+    // repopulating the public bucket with incomplete matches.
+    return jsonResponse({ ok: true, skipped: true, reason: "incomplete" }, 200, "no-store");
   }
   const hash = await recordHash(record);
   // New writes are content-addressed.  Re-uploading the same match (even
