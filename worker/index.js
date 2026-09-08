@@ -54,6 +54,12 @@ function resultOf(record) {
   return null;
 }
 
+function oppositeResult(result) {
+  if (result === "win") return "loss";
+  if (result === "loss") return "win";
+  return null;
+}
+
 function isComplete(record) {
   return record?.z === 1 && resultOf(record) !== null;
 }
@@ -137,6 +143,10 @@ function deckArchetypeKey(record) {
 
 function deckGroupKey(record) {
   return `${deckArchetypeKey(record)}\u0000class:${ownClass(record) ?? "?"}`;
+}
+
+function namedDeckGroupKey(label, classValue) {
+  return `archetype:${normalizedLabel(label) || "unknown"}\u0000class:${classValue ?? "?"}`;
 }
 
 function deckCards(record) {
@@ -693,6 +703,8 @@ function buildSummary(records, source) {
   const decks = new Map();
   const deckVariants = new Map();
   const classUsage = new Map();
+  const communityDecks = new Map();
+  const communityClasses = new Map();
   const opponents = new Map();
   const opponentDecks = new Map();
   const matchups = new Map();
@@ -707,6 +719,8 @@ function buildSummary(records, source) {
   let wins = 0;
   let losses = 0;
   let turnTotal = 0;
+  let communityDeckTotal = 0;
+  let communityClassTotal = 0;
 
   for (const record of complete) {
     const result = resultOf(record);
@@ -734,15 +748,62 @@ function buildSummary(records, source) {
     if (!deckVariants.has(deckKey)) deckVariants.set(deckKey, new Set());
     deckVariants.get(deckKey).add(deckVariantKey(record));
 
+    // Community meta statistics treat each side of a recognized match as a
+    // separate deck/class appearance. The uploader's result is kept for the
+    // uploader deck and inverted for the opponent deck/class.
+    if (!communityDecks.has(deckKey)) communityDecks.set(deckKey, outcomeBucket(deckKey, deck));
+    addOutcome(communityDecks.get(deckKey), record, result, turn);
+    addRepresentativeCoreCard(communityDecks.get(deckKey), record);
+    communityDecks.get(deckKey).classId = ownId;
+    communityDecks.get(deckKey).className = className(ownId);
+    communityDecks.get(deckKey).archetype = deck;
+    communityDecks.get(deckKey).archetypeKey = archetypeKey;
+    communityDeckTotal += 1;
+
     const opponentClassKey = String(opponentId ?? "?");
     if (!opponents.has(opponentClassKey)) opponents.set(opponentClassKey, outcomeBucket(opponentClassKey, opponent));
-    addOutcome(opponents.get(opponentClassKey), record, result, turn);
+    addOutcome(opponents.get(opponentClassKey), record, oppositeResult(result), turn);
     opponents.get(opponentClassKey).classId = opponentId;
 
     if (!opponentDecks.has(opponentKey)) opponentDecks.set(opponentKey, outcomeBucket(opponentKey, opponentDeckLabel(record)));
-    addOutcome(opponentDecks.get(opponentKey), record, result, turn);
+    addOutcome(opponentDecks.get(opponentKey), record, oppositeResult(result), turn);
     opponentDecks.get(opponentKey).classId = opponentId;
     opponentDecks.get(opponentKey).opponentClass = opponent;
+
+    if (ownId !== null) {
+      const ownClassKey = String(ownId);
+      if (!communityClasses.has(ownClassKey)) communityClasses.set(ownClassKey, outcomeBucket(ownClassKey, className(ownId)));
+      addOutcome(communityClasses.get(ownClassKey), record, result, turn);
+      communityClasses.get(ownClassKey).classId = ownId;
+      communityClassTotal += 1;
+    }
+    if (opponentId !== null) {
+      const opponentCommunityKey = String(opponentId);
+      if (!communityClasses.has(opponentCommunityKey)) communityClasses.set(opponentCommunityKey, outcomeBucket(opponentCommunityKey, opponent));
+      addOutcome(communityClasses.get(opponentCommunityKey), record, oppositeResult(result), turn);
+      communityClasses.get(opponentCommunityKey).classId = opponentId;
+      communityClassTotal += 1;
+    }
+
+    if (recognizedOpponentKey) {
+      const opponentCommunityDeckKey = namedDeckGroupKey(opponentDeckLabel(record), opponentId);
+      if (!communityDecks.has(opponentCommunityDeckKey)) communityDecks.set(opponentCommunityDeckKey, outcomeBucket(opponentCommunityDeckKey, opponentDeckLabel(record)));
+      const opponentCommunityDeck = communityDecks.get(opponentCommunityDeckKey);
+      addOutcome(opponentCommunityDeck, record, oppositeResult(result), turn);
+      opponentCommunityDeck.classId = opponentId;
+      opponentCommunityDeck.className = opponent;
+      opponentCommunityDeck.archetype = opponentDeckLabel(record);
+      opponentCommunityDeck.archetypeKey = recognizedOpponentKey;
+      if (record.opponent_core_card_id !== null && record.opponent_core_card_id !== undefined) {
+        const opponentCoreId = asNumber(record.opponent_core_card_id);
+        if (Number.isInteger(opponentCoreId) && opponentCoreId > 0) {
+          if (!Array.isArray(opponentCommunityDeck.coreCardIds)) opponentCommunityDeck.coreCardIds = [];
+          if (!opponentCommunityDeck.coreCardIds.includes(opponentCoreId) && opponentCommunityDeck.coreCardIds.length < 32) opponentCommunityDeck.coreCardIds.push(opponentCoreId);
+          if (opponentCommunityDeck.coreCardId === undefined || opponentCommunityDeck.coreCardId === null) opponentCommunityDeck.coreCardId = opponentCoreId;
+        }
+      }
+      communityDeckTotal += 1;
+    }
 
     const ownClassKey = String(ownId ?? "?");
     if (!classUsage.has(ownClassKey)) classUsage.set(ownClassKey, outcomeBucket(ownClassKey, className(ownId)));
@@ -815,8 +876,12 @@ function buildSummary(records, source) {
     usageRate: shareOf(row.games, total),
     variants: deckVariants.get(row.key)?.size || 0,
   }));
-  const maxUsage = Math.max(...deckRows.map((row) => row.usageRate || 0), 0) || 1;
-  const bestDecks = deckRows.map((row) => {
+  const communityDeckRows = sortedBuckets(communityDecks).map((row) => ({
+    ...row,
+    usageRate: shareOf(row.games, communityDeckTotal),
+  }));
+  const maxUsage = Math.max(...communityDeckRows.map((row) => row.usageRate || 0), 0) || 1;
+  const bestDecks = communityDeckRows.map((row) => {
     const usageIndex = (row.usageRate || 0) / maxUsage;
     const winRate = row.winRate || 0;
     const balancedScore = winRate * 0.65 + usageIndex * 0.35;
@@ -831,6 +896,8 @@ function buildSummary(records, source) {
   }).sort((a, b) => b.balancedScore - a.balancedScore || b.games - a.games);
   const classUsageRows = sortedBuckets(classUsage).map((row) => ({ ...row, usageRate: shareOf(row.games, total) }));
   const classWinRateRows = classUsageRows.slice().sort((a, b) => (b.winRate || 0) - (a.winRate || 0) || b.games - a.games);
+  const communityClassUsageRows = sortedBuckets(communityClasses).map((row) => ({ ...row, usageRate: shareOf(row.games, communityClassTotal) }));
+  const communityClassWinRateRows = communityClassUsageRows.slice().sort((a, b) => (b.winRate || 0) - (a.winRate || 0) || b.games - a.games);
   const opponentDeckRows = sortedBuckets(opponentDecks).map((row) => ({ ...row, usageRate: shareOf(row.games, total) }));
   const matchupRows = sortedBuckets(matchups).map((row) => ({ ...row, usageRate: shareOf(row.games, total) }));
   const matrixDeckRows = [...matrixDecks.values()].sort((a, b) => b.games - a.games || a.name.localeCompare(b.name));
@@ -905,6 +972,12 @@ function buildSummary(records, source) {
     analysisScopes,
     classUsage: classUsageRows,
     classWinRate: classWinRateRows,
+    communityDecks: communityDeckRows,
+    communityDeckWinRate: communityDeckRows,
+    communityDeckTotal,
+    communityClassUsage: communityClassUsageRows,
+    communityClassWinRate: communityClassWinRateRows,
+    communityClassTotal,
     opponentClasses: sortedBuckets(opponents),
     opponentDecks: opponentDeckRows,
     matchups: matchupRows,

@@ -139,7 +139,6 @@ td { color: #48566b; white-space: nowrap; }
 td:first-child { color: var(--ink); font-weight: 650; }
 .card-name-cell { min-width: 175px; }
 .card-name-cell strong { color: var(--ink); font-weight: 750; }
-.card-id-cell { color: var(--muted); font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; }
 .empty-cell { padding: 25px 8px; color: var(--muted); text-align: center; }
 .result-win { color: var(--green); font-weight: 800; }
 .result-loss { color: var(--red); font-weight: 800; }
@@ -176,7 +175,6 @@ td:first-child { color: var(--ink); font-weight: 650; }
 .stack-cell, .card-label { display: table-cell; }
 .stack-cell small, .card-label small { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; font-weight: 500; }
 .card-label strong { display: block; color: var(--ink); }
-.card-id-inline { font-family: "SFMono-Regular", Consolas, monospace; }
 .table-note { margin: 13px 0 0; color: var(--muted); font-size: 11px; }
 .mulligan-table-wrap { max-height: 620px; overflow: auto; }
 .mulligan-table thead th { position: sticky; top: 0; z-index: 1; background: #fbfcfe; }
@@ -205,11 +203,16 @@ td:first-child { color: var(--ink); font-weight: 650; }
 .usage-legend-value { display: inline-flex; align-items: baseline; gap: 5px; color: #f1dfae; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .usage-legend-value small { color: #9db6c9; font-size: 10px; }
 .usage-legend .empty-state { padding: 25px 5px; color: #a6bac9; }
+.win-rate-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.win-rate-block { min-width: 0; padding: 16px; background: #fbfcfe; border: 1px solid #e8edf3; border-radius: 14px; }
+.subpanel-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.subpanel-heading h3 { margin: 0; color: var(--ink); font-size: 14px; }
+.subpanel-heading span { color: var(--muted); font-size: 11px; }
 .class-win-chart { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 8px; min-height: 322px; padding-top: 7px; }
 .class-win-chart > .empty-state { grid-column: 1 / -1; align-self: center; }
 .class-win-axis { display: flex; flex-direction: column; justify-content: space-between; padding: 0 0 62px; color: #8798a8; font-size: 10px; }
 .class-win-plot { position: relative; height: 302px; min-width: 0; background: linear-gradient(#e4ebf1, #e4ebf1) top / 100% 1px no-repeat, linear-gradient(#e4ebf1, #e4ebf1) center / 100% 1px no-repeat, linear-gradient(#e4ebf1, #e4ebf1) bottom / 100% 1px no-repeat; }
-.class-win-bars { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; height: 100%; padding: 0 5px; }
+.class-win-bars { display: grid; grid-template-columns: repeat(var(--bar-count, 7), minmax(0, 1fr)); gap: 8px; height: 100%; padding: 0 5px; }
 .class-win-bar { display: grid; grid-template-rows: 22px minmax(0, 1fr) 28px 16px; min-width: 0; height: 100%; align-items: end; justify-items: center; }
 .class-win-value { align-self: end; color: #244f70; font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .class-win-track { display: flex; width: min(58px, 65%); height: 100%; min-width: 12px; align-items: end; justify-content: center; }
@@ -217,6 +220,7 @@ td:first-child { color: var(--ink); font-weight: 650; }
 .class-win-fill span { position: absolute; top: 50%; left: 50%; color: #385a72; font-size: 10px; font-weight: 650; transform: translate(-50%, -50%); white-space: nowrap; }
 .class-win-marker { display: grid; width: 25px; height: 25px; place-items: center; color: var(--marker-color); font-size: 21px; font-weight: 850; line-height: 1; }
 .class-win-marker img { width: 25px; height: 25px; object-fit: contain; }
+.class-win-marker .rate-marker-art { border-radius: 50%; object-fit: cover; }
 .class-win-name { width: 100%; overflow: hidden; color: #536278; font-size: 10px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .matrix-wrap { overflow-x: auto; margin: 0 -4px; }
 .matrix-table { min-width: 640px; }
@@ -282,6 +286,7 @@ td:first-child { color: var(--ink); font-weight: 650; }
   .hero h1 { font-size: 32px; }
   .hero-art { width: 100%; height: 180px; max-width: none; min-height: 180px; flex: 0 0 180px; }
   .metric-grid, .section-grid-two { grid-template-columns: 1fr; }
+  .win-rate-grid { grid-template-columns: 1fr; }
   .metric-card { min-height: 108px; }
   .panel { padding: 19px 16px; border-radius: 15px; }
   .usage-columns { grid-template-columns: 1fr; gap: 20px; }

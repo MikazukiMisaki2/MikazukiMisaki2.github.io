@@ -256,7 +256,7 @@ function renderTrendingCards(data) {
     return (row.classIds || []).some((id) => String(id) === String(trendClass));
   });
   $("trending-cards-table").innerHTML = rows.length ? rows.slice(0, 14).map((row) => `
-    <tr><td class="card-label"><strong>${escapeHtml(cardName(row.cardId))}</strong><small class="card-id-inline">${escapeHtml(row.cardId)}</small></td>
+    <tr><td class="card-label"><strong>${escapeHtml(cardName(row.cardId))}</strong></td>
     <td class="stack-cell"><strong>${percent(row.recentUsageRate)}</strong><small>${row.recentGames ?? 0} 场</small></td>
     <td>${deltaPoints(row.usageDelta)}</td><td>${percent(row.recentWinRate)}</td><td>${trendLabel(row.direction)}</td></tr>`).join("") : '<tr><td colspan="5" class="empty-cell">暂无可比较的趋势数据</td></tr>';
 
@@ -278,7 +278,12 @@ function renderUsagePie(pieId, legendId, rows, data, kind) {
     .sort((a, b) => (usageRate(b, data) || 0) - (usageRate(a, data) || 0) || Number(b.games || 0) - Number(a.games || 0));
   const maxVisible = kind === "deck" ? 8 : 7;
   const visible = sorted.slice(0, maxVisible);
-  const totalGames = Number(data?.overview?.games || sorted.reduce((sum, row) => sum + Number(row.games || 0), 0));
+  const totalKey = kind === "class" ? "communityClassTotal" : "communityDeckTotal";
+  const hasCommunityStats = data && data[totalKey] !== null && data[totalKey] !== undefined;
+  const unit = hasCommunityStats ? "侧" : "场";
+  const totalGames = hasCommunityStats
+    ? Number(data[totalKey] || 0)
+    : Number(data?.overview?.games || sorted.reduce((sum, row) => sum + Number(row.games || 0), 0));
   const omittedGames = Math.max(0, totalGames - visible.reduce((sum, row) => sum + Number(row.games || 0), 0));
   if (omittedGames > 0) {
     visible.push({
@@ -292,7 +297,7 @@ function renderUsagePie(pieId, legendId, rows, data, kind) {
   if (!visible.length || !total) {
     pie.style.setProperty("--pie-gradient", "#dfe6eb");
     pie.setAttribute("aria-label", "暂无使用率数据");
-    pie.innerHTML = '<div class="usage-pie-total"><strong>—</strong><span>场</span></div>';
+    pie.innerHTML = `<div class="usage-pie-total"><strong>—</strong><span>${unit}</span></div>`;
     legend.innerHTML = '<div class="empty-state">暂无数据</div>';
     return;
   }
@@ -309,12 +314,12 @@ function renderUsagePie(pieId, legendId, rows, data, kind) {
     return stop;
   });
   pie.style.setProperty("--pie-gradient", `conic-gradient(from -90deg, ${stops.join(", ")})`);
-  pie.setAttribute("aria-label", `${kind === "class" ? "职业" : "卡组"}使用率饼图，共 ${total} 场`);
-  pie.innerHTML = `${renderPieSvg(pieId, visible, total, kind)}<div class="usage-pie-total"><strong>${total.toLocaleString("zh-CN")}</strong><span>场</span></div>`;
+  pie.setAttribute("aria-label", `${kind === "class" ? "职业" : "卡组"}使用率饼图，共 ${total} ${unit}`);
+  pie.innerHTML = `${renderPieSvg(pieId, visible, total, kind)}<div class="usage-pie-total"><strong>${total.toLocaleString("zh-CN")}</strong><span>${unit}</span></div>`;
   legend.innerHTML = visible.map((row, index) => {
     const name = kind === "class" ? row.className || row.name : row.name;
     const rate = usageRate(row, data);
-    return `<div class="usage-legend-row" title="${escapeHtml(name)}"><span>${usageMarker(row, index, kind)}</span><span class="usage-legend-name">${escapeHtml(name)}</span><span class="usage-legend-value">${percent(rate)}<small>${row.games ?? 0}场</small></span></div>`;
+    return `<div class="usage-legend-row" title="${escapeHtml(name)}"><span>${usageMarker(row, index, kind)}</span><span class="usage-legend-name">${escapeHtml(name)}</span><span class="usage-legend-value">${percent(rate)}<small>${row.games ?? 0}${unit}</small></span></div>`;
   }).join("");
 }
 
@@ -376,44 +381,71 @@ function renderPieSvg(pieId, rows, total, kind) {
 }
 
 function renderUsage(data) {
-  const deckRows = data.deckCatalog?.types || data.decks || [];
-  renderUsagePie("class-usage-pie", "class-usage-list", data.classUsage || [], data, "class");
+  const deckRows = data.communityDecks || data.deckCatalog?.types || data.decks || [];
+  const classRows = data.communityClassUsage || data.classUsage || [];
+  renderUsagePie("class-usage-pie", "class-usage-list", classRows, data, "class");
   renderUsagePie("deck-usage-pie", "deck-usage-list", deckRows, data, "deck");
 }
 
-function renderClassWinRates(data) {
-  const rows = data.classWinRate || data.classUsage || [];
-  const rowMap = new Map(rows.map((row) => [String(row.classId), row]));
-  const container = $("class-win-rate-list");
-  if (!rows.length) {
-    container.innerHTML = '<div class="empty-state">暂无职业胜率数据</div>';
+function renderWinRateBars(containerId, rows, kind) {
+  const container = $(containerId);
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  if (!sourceRows.length) {
+    container.innerHTML = `<div class="empty-state">暂无${kind === "class" ? "职业" : "卡组"}胜率数据</div>`;
     return;
   }
 
-  const bars = Object.entries(CLASS_NAMES).map(([id, fallbackName]) => {
-    const row = rowMap.get(id) || {};
-    const name = row.className || fallbackName;
+  const chartRows = kind === "class"
+    ? Object.entries(CLASS_NAMES).map(([id, fallbackName]) => {
+      const row = sourceRows.find((item) => String(item.classId) === id) || {};
+      return { ...row, classId: Number(id), className: row.className || fallbackName };
+    })
+    : sourceRows
+      .filter((row) => Number(row.games || 0) > 0)
+      .slice()
+      .sort((a, b) => Number(b.games || 0) - Number(a.games || 0) || Number(b.winRate || 0) - Number(a.winRate || 0) || String(a.name || "").localeCompare(String(b.name || "")))
+      .slice(0, 8);
+  if (!chartRows.length) {
+    container.innerHTML = `<div class="empty-state">暂无${kind === "class" ? "职业" : "卡组"}胜率数据</div>`;
+    return;
+  }
+
+  const bars = chartRows.map((row, index) => {
+    const id = String(row.classId ?? "");
+    const name = kind === "class" ? row.className || CLASS_NAMES[id] || "未知职业" : row.name || "未命名卡组";
     const games = Number(row.games || 0);
     const wins = Number(row.wins || 0);
-    const losses = Number(row.losses || 0);
     const rate = games ? wins / games : Number(row.winRate || 0);
     const height = games ? Math.max(0, Math.min(100, rate * 100)) : 0;
     const color = winRateColor(rate, games);
     const ratio = games ? `${wins}/${games}` : "0/0";
+    const markerColor = kind === "class" ? CLASS_COLORS[id] : CHART_COLORS[index % CHART_COLORS.length];
+    const artUrl = kind === "deck" ? coreCardArtUrl(row.coreCardIds || row.coreCardId) : "";
+    const iconUrl = kind === "class" ? classIconUrl(id) : "";
+    const marker = artUrl
+      ? `<img class="rate-marker-art" src="${escapeHtml(artUrl)}" alt="">`
+      : iconUrl
+        ? `<img src="${iconUrl}" alt="">`
+        : escapeHtml(kind === "class" ? CLASS_GLYPHS[id] || "?" : "◆");
     return `<div class="class-win-bar" title="${escapeHtml(name)}：${games ? percent(rate) : "暂无数据"}">
       <div class="class-win-value">${games ? percent(rate) : "—"}</div>
       <div class="class-win-track"><div class="class-win-fill" style="height:${height.toFixed(1)}%;background:${color}">${height >= 25 ? `<span>${ratio}</span>` : ""}</div></div>
-      <div class="class-win-marker" style="--marker-color:${CLASS_COLORS[id]}">${classIconUrl(id) ? `<img src="${classIconUrl(id)}" alt="">` : escapeHtml(CLASS_GLYPHS[id])}</div>
+      <div class="class-win-marker" style="--marker-color:${markerColor}">${marker}</div>
       <div class="class-win-name">${escapeHtml(name)}</div>
     </div>`;
   }).join("");
-  container.innerHTML = `<div class="class-win-axis" aria-hidden="true"><span>100%</span><span>50%</span><span>0%</span></div><div class="class-win-plot"><div class="class-win-bars">${bars}</div></div>`;
+  container.innerHTML = `<div class="class-win-axis" aria-hidden="true"><span>100%</span><span>50%</span><span>0%</span></div><div class="class-win-plot"><div class="class-win-bars" style="--bar-count:${chartRows.length}">${bars}</div></div>`;
+}
+
+function renderClassWinRates(data) {
+  renderWinRateBars("class-win-rate-list", data.communityClassWinRate || data.classWinRate || data.classUsage || [], "class");
+  renderWinRateBars("deck-win-rate-list", data.communityDeckWinRate || data.communityDecks || data.bestDecks || data.decks || [], "deck");
 }
 
 function renderCards(data) {
   const rows = data.cards || [];
   $("cards-table").innerHTML = rows.length ? rows.slice(0, 14).map((row) => `
-    <tr><td class="card-name-cell"><strong>${escapeHtml(cardName(row.cardId))}</strong></td><td class="card-id-cell">${escapeHtml(row.cardId)}</td><td>${row.games}</td><td>${percent(row.winRate)}</td><td>${row.wins} / ${row.losses}</td></tr>`).join("") : '<tr><td colspan="5" class="empty-cell">暂无关键牌数据</td></tr>';
+    <tr><td class="card-name-cell"><strong>${escapeHtml(cardName(row.cardId))}</strong></td><td>${row.games}</td><td>${percent(row.winRate)}</td><td>${row.wins} / ${row.losses}</td></tr>`).join("") : '<tr><td colspan="4" class="empty-cell">暂无关键牌数据</td></tr>';
 }
 
 function renderMulliganStats(data) {
@@ -424,7 +456,7 @@ function renderMulliganStats(data) {
     ? `已记录 ${sampleGames} 局完整起手牌；保留率按卡牌次数计算`
     : "暂无完整起手牌记录";
   $("mulligan-stats-table").innerHTML = rows.length ? rows.map((row) => `
-    <tr><td class="card-name-cell"><strong>${escapeHtml(cardName(row.cardId))}</strong><small class="card-id-inline">${escapeHtml(row.cardId)}</small></td><td>${row.games}</td><td>${row.seen}</td><td>${row.kept}</td><td>${row.replaced}</td><td><strong>${percent(row.retainRate)}</strong></td><td>${percent(row.replaceRate)}</td></tr>`).join("") : '<tr><td colspan="7" class="empty-cell">暂无可计算保留率的换牌记录</td></tr>';
+    <tr><td class="card-name-cell"><strong>${escapeHtml(cardName(row.cardId))}</strong></td><td>${row.games}</td><td>${row.seen}</td><td>${row.kept}</td><td>${row.replaced}</td><td><strong>${percent(row.retainRate)}</strong></td><td>${percent(row.replaceRate)}</td></tr>`).join("") : '<tr><td colspan="7" class="empty-cell">暂无可计算保留率的换牌记录</td></tr>';
 }
 
 function renderTurns(data) {
@@ -473,7 +505,7 @@ async function loadCardNames() {
     const payload = await response.json();
     if (payload && typeof payload === "object" && !Array.isArray(payload)) cardNames = payload;
   } catch {
-    // The analysis page remains usable with IDs if the optional lookup file is unavailable.
+    // The analysis page remains usable with unknown card names if the optional lookup file is unavailable.
   }
 }
 
@@ -721,8 +753,8 @@ function renderDeckDetails(data) {
   $("deck-cards-table").innerHTML = cards.length ? cards.map((item) => {
     const cardId = Array.isArray(item) ? item[0] : item.cardId;
     const count = Array.isArray(item) ? item[1] : item.count;
-    return '<tr><td class="card-name-cell"><strong>' + escapeHtml(cardName(cardId)) + '</strong></td><td class="card-id-cell">' + escapeHtml(cardId) + "</td><td>" + escapeHtml(count) + "</td></tr>";
-  }).join("") : '<tr><td colspan="3" class="empty-cell">暂无卡牌构成</td></tr>';
+    return '<tr><td class="card-name-cell"><strong>' + escapeHtml(cardName(cardId)) + '</strong></td><td>' + escapeHtml(count) + "</td></tr>";
+  }).join("") : '<tr><td colspan="2" class="empty-cell">暂无卡牌构成</td></tr>';
 
   const matchups = variant?.matchups || [];
   $("deck-matchups-table").innerHTML = matchups.length ? matchups.slice(0, 20).map((row) => '<tr><td title="' + escapeHtml(row.name || row.opponent) + '"><strong>' + escapeHtml(row.name || row.opponent || "未知对手") + '</strong><small class="table-subline">' + escapeHtml(row.opponentClass || "") + "</small></td><td>" + row.games + "</td><td>" + percent(row.winRate) + "</td><td>" + row.wins + " / " + row.losses + "</td></tr>").join("") : '<tr><td colspan="4" class="empty-cell">暂无对阵数据</td></tr>';

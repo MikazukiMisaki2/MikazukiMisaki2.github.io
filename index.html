@@ -106,7 +106,7 @@
               <p class="eyebrow">BEST DECKS / META TIER LIST</p>
               <h2>Best Decks · Meta Tier List</h2>
             </div>
-            <span class="panel-caption">按已上传的完整对局自动计算</span>
+            <span class="panel-caption">双方已识别卡组计入 · 按出现次数统计</span>
           </div>
           <div class="control-row" id="meta-sort-controls" role="group" aria-label="卡组排序">
             <button class="filter-button is-active" type="button" data-meta-sort="balancedScore">综合</button>
@@ -115,7 +115,7 @@
           </div>
           <div class="table-wrap">
             <table class="meta-table">
-              <thead><tr><th>#</th><th>卡组</th><th>职业</th><th>使用率</th><th>对局</th><th>胜率</th><th>Tier</th></tr></thead>
+              <thead><tr><th>#</th><th>卡组</th><th>职业</th><th>使用率</th><th>出现</th><th>胜率</th><th>Tier</th></tr></thead>
               <tbody id="best-decks-table"><tr><td colspan="7" class="empty-cell">加载中…</td></tr></tbody>
             </table>
           </div>
@@ -128,20 +128,20 @@
                 <p class="eyebrow">CLASS &amp; DECK USAGE</p>
                 <h2>Class &amp; Deck Usage</h2>
               </div>
-              <span class="panel-caption">使用率 · 对局数</span>
+              <span class="panel-caption">双方计入 · 按对局侧统计</span>
             </div>
             <div class="usage-columns">
               <article class="usage-chart-card">
                 <div class="usage-chart-heading"><h3>职业使用率</h3><span>对局占比</span></div>
                 <div class="usage-chart-layout">
-                  <div class="usage-pie" id="class-usage-pie" role="img" aria-label="职业使用率饼图"><div class="usage-pie-total"><strong>—</strong><span>场</span></div></div>
+                  <div class="usage-pie" id="class-usage-pie" role="img" aria-label="职业使用率饼图"><div class="usage-pie-total"><strong>—</strong><span>侧</span></div></div>
                   <div class="usage-legend" id="class-usage-list"><div class="empty-state">加载中…</div></div>
                 </div>
               </article>
               <article class="usage-chart-card">
                 <div class="usage-chart-heading"><h3>卡组使用率</h3><span>对局占比</span></div>
                 <div class="usage-chart-layout">
-                  <div class="usage-pie" id="deck-usage-pie" role="img" aria-label="卡组使用率饼图"><div class="usage-pie-total"><strong>—</strong><span>场</span></div></div>
+                  <div class="usage-pie" id="deck-usage-pie" role="img" aria-label="卡组使用率饼图"><div class="usage-pie-total"><strong>—</strong><span>侧</span></div></div>
                   <div class="usage-legend" id="deck-usage-list"><div class="empty-state">加载中…</div></div>
                 </div>
               </article>
@@ -152,13 +152,30 @@
         <section class="panel wide-panel class-win-section">
           <div class="panel-heading">
             <div>
-              <p class="eyebrow">CLASS WIN RATE</p>
-              <h2>Class Win Rate</h2>
+              <p class="eyebrow">CLASS / DECK WIN RATE</p>
+              <h2>职业胜率 / 卡组胜率</h2>
             </div>
-            <span class="panel-caption">我方职业 · 完整对局</span>
+            <span class="panel-caption">双方计入 · 每局两侧分别计算</span>
           </div>
-          <div class="class-win-chart" id="class-win-rate-list">
-            <div class="empty-state">加载中…</div>
+          <div class="win-rate-grid">
+            <article class="win-rate-block">
+              <div class="subpanel-heading">
+                <h3>职业胜率</h3>
+                <span>按职业出现次数</span>
+              </div>
+              <div class="class-win-chart" id="class-win-rate-list">
+                <div class="empty-state">加载中…</div>
+              </div>
+            </article>
+            <article class="win-rate-block">
+              <div class="subpanel-heading">
+                <h3>卡组胜率</h3>
+                <span>仅计入已识别卡组</span>
+              </div>
+              <div class="class-win-chart deck-win-chart" id="deck-win-rate-list">
+                <div class="empty-state">加载中…</div>
+              </div>
+            </article>
           </div>
         </section>
 
@@ -226,8 +243,8 @@
                 <h3 class="subsection-title">卡牌构成</h3>
                 <div class="table-wrap">
                   <table class="deck-cards-table">
-                    <thead><tr><th>卡牌名称</th><th>卡牌 ID</th><th>数量</th></tr></thead>
-                    <tbody id="deck-cards-table"><tr><td colspan="3" class="empty-cell">—</td></tr></tbody>
+                    <thead><tr><th>卡牌名称</th><th>数量</th></tr></thead>
+                    <tbody id="deck-cards-table"><tr><td colspan="2" class="empty-cell">—</td></tr></tbody>
                   </table>
                 </div>
               </div>
@@ -258,12 +275,12 @@
                 <p class="eyebrow">CARD LOOKUP</p>
                 <h2>卡牌对照表</h2>
               </div>
-              <span class="panel-caption">ID ↔ 卡名 · 上传卡组样本</span>
+              <span class="panel-caption">上传卡组样本</span>
             </div>
             <div class="table-wrap">
               <table>
-                <thead><tr><th>卡牌名称</th><th>卡牌 ID</th><th>出现对局</th><th>胜率</th><th>战绩</th></tr></thead>
-                <tbody id="cards-table"><tr><td colspan="5" class="empty-cell">加载中…</td></tr></tbody>
+                <thead><tr><th>卡牌名称</th><th>出现对局</th><th>胜率</th><th>战绩</th></tr></thead>
+                <tbody id="cards-table"><tr><td colspan="4" class="empty-cell">加载中…</td></tr></tbody>
               </table>
             </div>
           </article>
