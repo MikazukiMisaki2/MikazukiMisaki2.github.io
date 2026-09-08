@@ -214,9 +214,16 @@ function setConnection(kind, text) {
 
 function renderOverview(data) {
   const overview = data.overview || {};
+  const source = data.source || {};
   const games = Number(overview.games || 0);
   $("metric-games").textContent = games.toLocaleString("zh-CN");
-  $("metric-games-foot").textContent = `${Number(overview.totalRecords || games).toLocaleString("zh-CN")} 条记录已扫描`;
+  const scanned = Number(source.scannedRecords ?? overview.totalRecords ?? games);
+  const duplicateRecords = Number(source.duplicateRecords || 0);
+  const unlimitedRecords = Number(source.unlimitedRecords || 0);
+  const filters = [];
+  if (duplicateRecords > 0) filters.push(`去重 ${duplicateRecords} 条`);
+  if (unlimitedRecords > 0) filters.push(`排除无限 ${unlimitedRecords} 条`);
+  $("metric-games-foot").textContent = `${scanned.toLocaleString("zh-CN")} 条记录已扫描${filters.length ? ` · ${filters.join(" · ")}` : ""}`;
   $("metric-win-rate").textContent = percent(overview.winRate);
   $("metric-win-rate-foot").textContent = `${Number(overview.wins || 0)} 胜 / ${Number(overview.losses || 0)} 负`;
   $("metric-record").textContent = `${Number(overview.wins || 0)} / ${Number(overview.losses || 0)}`;

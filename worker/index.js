@@ -47,6 +47,90 @@ function className(value) {
   return id === null ? "未知职业" : CLASS_NAMES[id] || `职业 ${id}`;
 }
 
+// Match ids and timestamps identify an upload instance, not the match
+// content.  Excluding them lets an accidental re-export of the same game
+// collapse to one public sample even when the client generated a new id.
+const NON_CONTENT_RECORD_FIELDS = new Set([
+  "id", "at", "end", "uploaded_at", "uploadedAt", "received_at", "receivedAt",
+]);
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function recordContent(record) {
+  if (!record || typeof record !== "object" || Array.isArray(record)) return record;
+  return Object.fromEntries(
+    Object.entries(record).filter(([key]) => !NON_CONTENT_RECORD_FIELDS.has(key)),
+  );
+}
+
+function recordFingerprint(record) {
+  return canonicalJson(recordContent(record));
+}
+
+async function recordHash(record) {
+  const bytes = new TextEncoder().encode(recordFingerprint(record));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function deduplicateRecords(records) {
+  const seen = new Set();
+  const unique = [];
+  let duplicates = 0;
+  for (const record of records) {
+    const fingerprint = recordFingerprint(record);
+    if (seen.has(fingerprint)) {
+      duplicates += 1;
+      continue;
+    }
+    seen.add(fingerprint);
+    unique.push(record);
+  }
+  return { records: unique, duplicates };
+}
+
+function formatKind(value) {
+  if (typeof value === "boolean" || value === null || value === undefined) return null;
+  if (typeof value === "number" && Number.isInteger(value)) return { 1: "rotation", 2: "unlimited" }[value] || null;
+  const text = String(value).trim().toLocaleLowerCase("en-US");
+  if (["2", "unlimited", "unlimit", "unlimited_mode", "无限", "无限模式"].includes(text)) return "unlimited";
+  if (["1", "rotation", "rotation_mode", "轮换", "轮换模式"].includes(text)) return "rotation";
+  return null;
+}
+
+function recordFormat(record) {
+  const deck = record?.deck;
+  const values = [];
+  if (deck && typeof deck === "object") {
+    values.push(deck.f, deck.format, deck.deck_format, deck.format_version, deck.formatVersion);
+  }
+  values.push(
+    record?.deck_format,
+    record?.format,
+    record?.format_version,
+    record?.formatVersion,
+    record?.battle_format,
+  );
+  // ``g`` is normally the battle mode (ranked/practice).  Only an explicit
+  // text label can identify it as a deck format.
+  if (typeof record?.g === "string") values.push(record.g);
+  for (const value of values) {
+    const kind = formatKind(value);
+    if (kind) return kind;
+  }
+  return null;
+}
+
+function isUnlimitedRecord(record) {
+  return recordFormat(record) === "unlimited";
+}
+
 function resultOf(record) {
   const value = record?.r?.v;
   if (value === "胜利" || value === "WIN" || value === "WON") return "win";
@@ -699,6 +783,15 @@ function buildAnalysisView(records) {
 }
 
 function buildSummary(records, source) {
+  const inputRecords = Array.isArray(records) ? records : [];
+  const eligibleRecords = inputRecords.filter((record) => !isUnlimitedRecord(record));
+  const unlimitedRecords = inputRecords.length - eligibleRecords.length;
+  const deduplicated = deduplicateRecords(eligibleRecords);
+  // Keep this second guard in the summary builder as well as in R2 loading:
+  // it protects direct callers and future import paths from reintroducing
+  // duplicate or Unlimited records into public statistics.
+  records = deduplicated.records;
+  const sourceInfo = source || {};
   const complete = records.filter(isComplete);
   const decks = new Map();
   const deckVariants = new Map();
@@ -948,11 +1041,13 @@ function buildSummary(records, source) {
     schema: 2,
     generatedAt: new Date().toISOString(),
     source: {
-      scannedRecords: source.scannedRecords,
+      scannedRecords: sourceInfo.scannedRecords,
       validRecords: records.length,
       completeRecords: total,
       incompleteRecords: records.length - total,
-      truncated: source.truncated,
+      duplicateRecords: Number(sourceInfo.duplicateRecords || 0) + deduplicated.duplicates,
+      unlimitedRecords: Number(sourceInfo.unlimitedRecords || 0) + unlimitedRecords,
+      truncated: sourceInfo.truncated,
     },
     overview: {
       games: total,
@@ -1008,8 +1103,11 @@ function buildSummary(records, source) {
 
 async function loadRecords(env, limit) {
   const records = [];
+  const seenFingerprints = new Set();
   let cursor;
   let scannedRecords = 0;
+  let duplicateRecords = 0;
+  let unlimitedRecords = 0;
   let truncated = false;
   do {
     const page = await env.MATCHES.list({ prefix: "matches/", limit: Math.min(1000, limit), ...(cursor ? { cursor } : {}) });
@@ -1028,7 +1126,19 @@ async function loadRecords(env, limit) {
         }
       }));
       for (const value of values) {
-        if (value) records.push(value);
+        if (value) {
+          if (isUnlimitedRecord(value)) {
+            unlimitedRecords += 1;
+            continue;
+          }
+          const fingerprint = recordFingerprint(value);
+          if (seenFingerprints.has(fingerprint)) {
+            duplicateRecords += 1;
+            continue;
+          }
+          seenFingerprints.add(fingerprint);
+          records.push(value);
+        }
         if (records.length >= limit) break;
       }
       if (records.length >= limit) break;
@@ -1036,7 +1146,7 @@ async function loadRecords(env, limit) {
     truncated = Boolean(page.truncated) && records.length >= limit;
     cursor = page.truncated && page.cursor && records.length < limit ? page.cursor : undefined;
   } while (cursor);
-  return { records, scannedRecords, truncated };
+  return { records, scannedRecords, duplicateRecords, unlimitedRecords, truncated };
 }
 
 function parseReadLimit(url) {
@@ -1062,9 +1172,18 @@ async function handleUpload(request, env) {
   if (!record || record.v !== 3 || typeof record.id !== "string" || !/^[A-Za-z0-9_-]{8,64}$/.test(record.id)) {
     return jsonResponse({ error: "Invalid training record" }, 400);
   }
-  const now = new Date();
-  const pad = (value) => String(value).padStart(2, "0");
-  const key = `matches/${now.getUTCFullYear()}/${pad(now.getUTCMonth() + 1)}/${pad(now.getUTCDate())}/${record.id}.json`;
+  if (isUnlimitedRecord(record)) {
+    // Treat this as an accepted no-op so an older client queue cannot retry
+    // an out-of-scope match forever.  No Unlimited record is written to R2.
+    return jsonResponse({ ok: true, skipped: true, reason: "unlimited" }, 200, "no-store");
+  }
+  const hash = await recordHash(record);
+  // New writes are content-addressed.  Re-uploading the same match (even
+  // with a new client id or timestamp) therefore addresses the same R2 object
+  // instead of creating another public sample.
+  const key = `matches/dedup/${hash}.json`;
+  const existing = typeof env.MATCHES.head === "function" ? await env.MATCHES.head(key) : null;
+  if (existing) return jsonResponse({ ok: true, duplicate: true, key }, 200, "no-store");
   await env.MATCHES.put(key, JSON.stringify(record), { httpMetadata: { contentType: "application/json; charset=utf-8" } });
   return jsonResponse({ ok: true, key }, 201, "no-store");
 }
@@ -1080,7 +1199,12 @@ export default {
     if (request.method === "GET" && (url.pathname === "/api/summary" || url.pathname === "/api/analysis")) {
       try {
         const loaded = await loadRecords(env, parseReadLimit(url));
-        return jsonResponse(buildSummary(loaded.records, { scannedRecords: loaded.scannedRecords, truncated: loaded.truncated }), 200, "public, max-age=60, s-maxage=60");
+        return jsonResponse(buildSummary(loaded.records, {
+          scannedRecords: loaded.scannedRecords,
+          duplicateRecords: loaded.duplicateRecords,
+          unlimitedRecords: loaded.unlimitedRecords,
+          truncated: loaded.truncated,
+        }), 200, "public, max-age=60, s-maxage=60");
       } catch (error) {
         return jsonResponse({ error: "Unable to read analysis data", detail: String(error?.message || error) }, 500);
       }
