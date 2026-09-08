@@ -116,6 +116,21 @@ function recordTimestamp(record) {
   return Number.isFinite(value) ? value : null;
 }
 
+function recordCr(record) {
+  const before = asNumber(record?.cr_before);
+  if (Number.isInteger(before)) return before;
+  const after = asNumber(record?.cr_after);
+  return Number.isInteger(after) ? after : null;
+}
+
+function recordsAtLeastCr(records, minimum) {
+  if (minimum === null || minimum === undefined) return records;
+  return records.filter((record) => {
+    const cr = recordCr(record);
+    return cr !== null && cr >= minimum;
+  });
+}
+
 function deckArchetypeKey(record) {
   return `archetype:${normalizedLabel(deckArchetype(record)) || "unknown"}`;
 }
@@ -212,6 +227,19 @@ function mulliganIds(record) {
   const cards = record?.m?.r;
   if (!Array.isArray(cards)) return [];
   return cards.map((item) => Array.isArray(item) ? item[0] : item).filter((id) => id !== null && id !== undefined);
+}
+
+function mulliganCardIds(record, key) {
+  const cards = record?.m?.[key];
+  if (!Array.isArray(cards)) return [];
+  return cards
+    .map((item) => {
+      if (Array.isArray(item)) return item[0];
+      if (item && typeof item === "object") return item.cardId ?? item.card_id ?? item.id;
+      return item;
+    })
+    .map((id) => asNumber(id))
+    .filter((id) => Number.isInteger(id) && id > 0);
 }
 
 function shareOf(games, total) {
@@ -395,6 +423,141 @@ function buildAnalysisScopes(records) {
   };
 }
 
+function buildMatchupRows(records) {
+  const matchups = new Map();
+  for (const record of records) {
+    const result = resultOf(record);
+    const turn = endingTurn(record);
+    const deck = deckName(record);
+    const ownId = ownClass(record);
+    const opponentId = opponentClass(record);
+    const opponent = className(opponentId);
+    const deckKey = deckGroupKey(record);
+    const opponentKey = opponentDeckKey(record);
+    const matchupKey = `${deckKey}\u0000${opponentKey}`;
+    if (!matchups.has(matchupKey)) matchups.set(matchupKey, outcomeBucket(matchupKey, deck));
+    addOutcome(matchups.get(matchupKey), record, result, turn);
+    matchups.get(matchupKey).deckKey = deckKey;
+    matchups.get(matchupKey).deck = deck;
+    matchups.get(matchupKey).opponentKey = opponentKey;
+    matchups.get(matchupKey).opponent = opponentDeckLabel(record);
+    matchups.get(matchupKey).opponentClass = opponent;
+    matchups.get(matchupKey).opponentClassId = opponentId;
+    matchups.get(matchupKey).ownClass = className(ownId);
+  }
+  return sortedBuckets(matchups).map((row) => ({
+    ...row,
+    usageRate: shareOf(row.games, records.length),
+  }));
+}
+
+function buildMatchupMatrix(records) {
+  const matrixMatchups = new Map();
+  const matrixDecks = new Map();
+  const matrixOpponents = new Map();
+  for (const record of records) {
+    const result = resultOf(record);
+    const turn = endingTurn(record);
+    const deck = deckName(record);
+    const ownId = ownClass(record);
+    const opponentId = opponentClass(record);
+    const opponent = className(opponentId);
+    const archetypeKey = deckArchetypeKey(record);
+    const recognizedOpponentKey = recognizedOpponentDeckKey(record);
+    if (!recognizedOpponentKey) continue;
+
+    const matrixMatchupKey = `${archetypeKey}\u0000${recognizedOpponentKey}`;
+    if (!matrixMatchups.has(matrixMatchupKey)) {
+      matrixMatchups.set(matrixMatchupKey, {
+        ...outcomeBucket(matrixMatchupKey, deck),
+        deckKey: archetypeKey,
+        deck,
+        archetypeKey,
+        opponentKey: recognizedOpponentKey,
+        opponent: opponentDeckLabel(record),
+        opponentClass: opponent,
+        opponentClassId: opponentId,
+      });
+    }
+    addOutcome(matrixMatchups.get(matrixMatchupKey), record, result, turn);
+
+    if (!matrixDecks.has(archetypeKey)) {
+      matrixDecks.set(archetypeKey, {
+        key: archetypeKey,
+        archetypeKey,
+        name: deck,
+        classId: ownId,
+        className: className(ownId),
+        games: 0,
+      });
+    }
+    matrixDecks.get(archetypeKey).games += 1;
+    if (!matrixOpponents.has(recognizedOpponentKey)) {
+      matrixOpponents.set(recognizedOpponentKey, {
+        key: recognizedOpponentKey,
+        archetypeKey: recognizedOpponentKey,
+        name: opponentDeckLabel(record),
+        classId: opponentId,
+        className: opponent,
+        games: 0,
+      });
+    }
+    matrixOpponents.get(recognizedOpponentKey).games += 1;
+  }
+
+  const matrixDeckRows = [...matrixDecks.values()]
+    .sort((a, b) => b.games - a.games || a.name.localeCompare(b.name));
+  const matrixOpponentRows = [...matrixOpponents.values()]
+    .sort((a, b) => b.games - a.games || a.name.localeCompare(b.name));
+  const matrixCells = [...matrixMatchups.values()].map((row) => ({
+    ...compactBucket(row),
+    deckKey: row.deckKey,
+    deck: row.deck,
+    archetypeKey: row.archetypeKey,
+    opponentKey: row.opponentKey,
+    opponent: row.opponent,
+    opponentClass: row.opponentClass,
+    opponentClassId: row.opponentClassId,
+  }));
+  return { decks: matrixDeckRows, opponents: matrixOpponentRows, cells: matrixCells };
+}
+
+function buildMulliganStats(records) {
+  const buckets = new Map();
+  let sampleGames = 0;
+  for (const record of records) {
+    const initial = mulliganCardIds(record, "i");
+    if (!initial.length) continue;
+    sampleGames += 1;
+    const replaced = mulliganCardIds(record, "r");
+    const initialCounts = new Map();
+    const replacedCounts = new Map();
+    for (const cardId of initial) initialCounts.set(cardId, (initialCounts.get(cardId) || 0) + 1);
+    for (const cardId of replaced) replacedCounts.set(cardId, (replacedCounts.get(cardId) || 0) + 1);
+    for (const [cardId, seen] of initialCounts) {
+      const replacedCount = Math.min(seen, replacedCounts.get(cardId) || 0);
+      if (!buckets.has(cardId)) {
+        buckets.set(cardId, { cardId, games: 0, seen: 0, kept: 0, replaced: 0 });
+      }
+      const bucket = buckets.get(cardId);
+      bucket.games += 1;
+      bucket.seen += seen;
+      bucket.replaced += replacedCount;
+      bucket.kept += seen - replacedCount;
+    }
+  }
+  return {
+    games: sampleGames,
+    cards: [...buckets.values()]
+      .map((row) => ({
+        ...row,
+        retainRate: row.seen ? row.kept / row.seen : null,
+        replaceRate: row.seen ? row.replaced / row.seen : null,
+      }))
+      .sort((a, b) => b.seen - a.seen || (b.retainRate || 0) - (a.retainRate || 0) || String(a.cardId).localeCompare(String(b.cardId))),
+  };
+}
+
 function buildDeckCatalog(records, total) {
   const typeBuckets = new Map();
   const variantBuckets = new Map();
@@ -513,6 +676,16 @@ function buildDeckCatalog(records, total) {
     .sort((a, b) => b.games - a.games || (b.winRate || 0) - (a.winRate || 0));
 
   return { types, variants: [...variantRows.values()] };
+}
+
+function buildAnalysisView(records) {
+  return {
+    games: records.length,
+    analysisScopes: buildAnalysisScopes(records),
+    deckCatalog: buildDeckCatalog(records, records.length),
+    matchups: buildMatchupRows(records),
+    matchupMatrix: buildMatchupMatrix(records),
+  };
 }
 
 function buildSummary(records, source) {
@@ -697,6 +870,13 @@ function buildSummary(records, source) {
   const turnsRows = [...turns.values()].sort((a, b) => a.turn - b.turn);
   const analysisScopes = buildAnalysisScopes(complete);
   const deckCatalog = buildDeckCatalog(complete, total);
+  const mulliganStats = buildMulliganStats(complete);
+  const analysisByCr = Object.fromEntries(
+    [["1650", 1650], ["1850", 1850]].map(([key, minimum]) => {
+      const filtered = recordsAtLeastCr(complete, minimum);
+      return [key, { crMinimum: minimum, ...buildAnalysisView(filtered) }];
+    }),
+  );
   return {
     schema: 2,
     generatedAt: new Date().toISOString(),
@@ -736,6 +916,8 @@ function buildSummary(records, source) {
     cores: sortedBuckets(cores).map((row) => ({ cardId: row.key, games: row.games, wins: row.wins, losses: row.losses, winRate: row.winRate })),
     cards: cardsRows,
     mulligans: sortedBuckets(mulligans).map((row) => ({ cardId: row.cardId, games: row.games, wins: row.wins, losses: row.losses, winRate: row.winRate })).slice(0, 40),
+    mulliganStats,
+    analysisByCr,
     turns: turnsRows,
     trendingCards: trends.cards,
     trendWindow: {

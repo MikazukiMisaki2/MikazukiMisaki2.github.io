@@ -175,11 +175,17 @@
             <select id="analysis-class"><option value="">全部职业</option></select>
             <label for="analysis-deck">卡组类型</label>
             <select id="analysis-deck"><option value="">全部卡组类型</option></select>
+            <label for="analysis-cr">CR 分段</label>
+            <select id="analysis-cr">
+              <option value="all">全部</option>
+              <option value="1650">1650 以上</option>
+              <option value="1850">1850 以上</option>
+            </select>
             <label for="analysis-variant">具体构筑</label>
             <select id="analysis-variant" disabled><option value="">选择卡组后可选</option></select>
             <button class="button button-quiet button-small" id="clear-analysis" type="button">清除选择</button>
           </div>
-          <p class="selection-note" id="selection-note">请选择职业或卡组类型；选择卡组后还可以查看具体构筑。</p>
+          <p class="selection-note" id="selection-note">请选择职业或卡组类型；也可以按对局开始 CR 分段筛选。</p>
         </section>
 
         <section class="panel wide-panel matrix-section">
@@ -284,6 +290,22 @@
               <p class="table-note" id="trend-window-note">—</p>
             </div>
           </article>
+        </section>
+
+        <section class="panel wide-panel mulligan-section">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">MULLIGAN RETENTION</p>
+              <h2>换牌统计</h2>
+            </div>
+            <span class="panel-caption" id="mulligan-note">按初始手牌出现次数计算</span>
+          </div>
+          <div class="table-wrap mulligan-table-wrap">
+            <table class="mulligan-table">
+              <thead><tr><th>卡牌</th><th>出现对局</th><th>初始出现</th><th>保留</th><th>换出</th><th>保留率</th><th>换出率</th></tr></thead>
+              <tbody id="mulligan-stats-table"><tr><td colspan="7" class="empty-cell">加载中…</td></tr></tbody>
+            </table>
+          </div>
         </section>
 
         <section class="panel wide-panel turn-section">

@@ -96,8 +96,9 @@ main > .filtered-analysis { order: 50; }
 main > .matrix-section { order: 60; }
 main > .deck-library-section { order: 70; }
 main > .card-intelligence-section { order: 80; }
-main > .turn-section { order: 90; }
-main > .recent-section { order: 100; }
+main > .mulligan-section { order: 90; }
+main > .turn-section { order: 100; }
+main > .recent-section { order: 110; }
 .filtered-analysis { min-width: 0; }
 .filtered-analysis .metric-grid { margin-top: 22px; }
 
@@ -177,6 +178,10 @@ td:first-child { color: var(--ink); font-weight: 650; }
 .card-label strong { display: block; color: var(--ink); }
 .card-id-inline { font-family: "SFMono-Regular", Consolas, monospace; }
 .table-note { margin: 13px 0 0; color: var(--muted); font-size: 11px; }
+.mulligan-table-wrap { max-height: 620px; overflow: auto; }
+.mulligan-table thead th { position: sticky; top: 0; z-index: 1; background: #fbfcfe; }
+.mulligan-table td:first-child { min-width: 190px; }
+.mulligan-table td:nth-child(n + 2) { font-variant-numeric: tabular-nums; }
 .usage-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .usage-chart-card { min-width: 0; padding: 16px; color: #e7edf2; background: linear-gradient(145deg, #071d34, #0c2b48); border: 1px solid #254d6b; border-radius: 14px; box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 12px 26px rgba(8, 30, 58, .13); }
 .usage-chart-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }

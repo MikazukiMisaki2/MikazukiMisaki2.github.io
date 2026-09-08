@@ -11,6 +11,7 @@ let trendClass = "";
 let selectedClass = "";
 let selectedDeck = "";
 let selectedVariant = "";
+let selectedCr = "all";
 
 const CLASS_NAMES = Object.freeze({
   1: "精灵",
@@ -113,6 +114,18 @@ function usageRate(row, data) {
 
 function classLabel(classId) {
   return CLASS_NAMES[String(classId)] || `职业 ${classId}`;
+}
+
+function analysisCrLabel() {
+  if (selectedCr === "1650") return "对局开始 CR ≥ 1650";
+  if (selectedCr === "1850") return "对局开始 CR ≥ 1850";
+  return "全部 CR";
+}
+
+function activeAnalysisData(data) {
+  if (!data || selectedCr === "all") return data;
+  const view = data.analysisByCr?.[selectedCr];
+  return view ? { ...data, ...view } : data;
 }
 
 function classIconUrl(classId) {
@@ -403,6 +416,17 @@ function renderCards(data) {
     <tr><td class="card-name-cell"><strong>${escapeHtml(cardName(row.cardId))}</strong></td><td class="card-id-cell">${escapeHtml(row.cardId)}</td><td>${row.games}</td><td>${percent(row.winRate)}</td><td>${row.wins} / ${row.losses}</td></tr>`).join("") : '<tr><td colspan="5" class="empty-cell">暂无关键牌数据</td></tr>';
 }
 
+function renderMulliganStats(data) {
+  const stats = data.mulliganStats || {};
+  const rows = Array.isArray(stats.cards) ? stats.cards : [];
+  const sampleGames = Number(stats.games || 0);
+  $("mulligan-note").textContent = sampleGames
+    ? `已记录 ${sampleGames} 局完整起手牌；保留率按卡牌次数计算`
+    : "暂无完整起手牌记录";
+  $("mulligan-stats-table").innerHTML = rows.length ? rows.map((row) => `
+    <tr><td class="card-name-cell"><strong>${escapeHtml(cardName(row.cardId))}</strong><small class="card-id-inline">${escapeHtml(row.cardId)}</small></td><td>${row.games}</td><td>${row.seen}</td><td>${row.kept}</td><td>${row.replaced}</td><td><strong>${percent(row.retainRate)}</strong></td><td>${percent(row.replaceRate)}</td></tr>`).join("") : '<tr><td colspan="7" class="empty-cell">暂无可计算保留率的换牌记录</td></tr>';
+}
+
 function renderTurns(data) {
   const rows = data.turns || [];
   const max = Math.max(...rows.map((row) => row.games), 1);
@@ -624,31 +648,34 @@ function renderFilteredAnalysis(data) {
   const scopeInfo = selectedScope(data);
   if (!scopeInfo) {
     section.hidden = true;
-    note.textContent = "请选择职业或卡组类型；选择卡组后还可以查看具体构筑。";
+    note.textContent = "请选择职业或卡组类型；选择卡组后还可以查看具体构筑。当前筛选：" + analysisCrLabel() + "。";
     return;
   }
   if (!scopeInfo.row) {
     section.hidden = true;
-    note.textContent = "当前职业与卡组没有交集，请调整筛选条件。";
+    note.textContent = "当前职业与卡组没有交集，请调整筛选条件。当前筛选：" + analysisCrLabel() + "。";
     return;
   }
   section.hidden = false;
-  note.textContent = "当前分析范围：" + scopeInfo.label + " · " + scopeInfo.row.games + " 场；下方统计不会把其他卡组混入。";
+  note.textContent = "当前分析范围：" + scopeInfo.label + " · " + scopeInfo.row.games + " 场 · " + analysisCrLabel() + "；下方统计不会把其他卡组混入。";
   renderScopedOverview(scopeInfo);
   renderInsights(data, scopeInfo);
   renderSide(scopeInfo);
 }
 
 function renderAnalysisControls(data) {
+  if (selectedCr !== "all" && !data.analysisByCr?.[selectedCr]) selectedCr = "all";
+  const analysisData = activeAnalysisData(data);
   const classSelect = $("analysis-class");
   const deckSelect = $("analysis-deck");
   const variantSelect = $("analysis-variant");
-  const classRows = (data.classUsage || []).filter((row) => row.classId !== null && row.classId !== undefined);
+  const crSelect = $("analysis-cr");
+  const classRows = (analysisData.analysisScopes?.classes || analysisData.classUsage || []).filter((row) => row.classId !== null && row.classId !== undefined);
   if (!classRows.some((row) => String(row.classId) === String(selectedClass))) selectedClass = "";
   classSelect.innerHTML = '<option value="">全部职业</option>' + classRows.map((row) => '<option value="' + escapeHtml(row.classId) + '">' + escapeHtml(row.className || row.name) + "</option>").join("");
   classSelect.value = selectedClass;
 
-  const typeRows = data.deckCatalog?.types || data.decks || [];
+  const typeRows = analysisData.deckCatalog?.types || analysisData.analysisScopes?.decks || analysisData.decks || [];
   if (!typeRows.some((row) => row.key === selectedDeck)) selectedDeck = "";
   deckSelect.innerHTML = '<option value="">全部卡组类型</option>' + typeRows.map((row) => {
     const suffix = row.className ? " · " + row.className : "";
@@ -656,7 +683,7 @@ function renderAnalysisControls(data) {
   }).join("");
   deckSelect.value = encodeKey(selectedDeck);
 
-  const selectedType = findType(data);
+  const selectedType = findType(analysisData);
   const variantRows = Array.isArray(selectedType?.variants) ? selectedType.variants : [];
   if (!variantRows.some((row) => row.key === selectedVariant)) selectedVariant = "";
   variantSelect.innerHTML = selectedDeck
@@ -664,6 +691,7 @@ function renderAnalysisControls(data) {
     : '<option value="">选择卡组后可选</option>';
   variantSelect.disabled = !selectedDeck || !variantRows.length;
   variantSelect.value = encodeKey(selectedVariant);
+  crSelect.value = selectedCr;
 }
 
 function renderDeckDetails(data) {
@@ -761,13 +789,15 @@ function render(data) {
   currentData = data;
   renderOverview(data);
   renderAnalysisControls(data);
+  const analysisData = activeAnalysisData(data);
   renderBestDecks(data);
   renderUsage(data);
   renderClassWinRates(data);
-  renderFilteredAnalysis(data);
-  renderDeckDetails(data);
-  renderMatchupMatrix(data);
+  renderFilteredAnalysis(analysisData);
+  renderDeckDetails(analysisData);
+  renderMatchupMatrix(analysisData);
   renderCards(data);
+  renderMulliganStats(data);
   renderTrendingCards(data);
   renderTurns(data);
   renderRecent(data);
@@ -777,9 +807,10 @@ function render(data) {
 function rerenderSelection() {
   if (!currentData) return;
   renderAnalysisControls(currentData);
-  renderFilteredAnalysis(currentData);
-  renderDeckDetails(currentData);
-  renderMatchupMatrix(currentData);
+  const analysisData = activeAnalysisData(currentData);
+  renderFilteredAnalysis(analysisData);
+  renderDeckDetails(analysisData);
+  renderMatchupMatrix(analysisData);
 }
 
 $("refresh-button").addEventListener("click", loadSummary);
@@ -803,10 +834,16 @@ $("analysis-variant").addEventListener("change", (event) => {
   selectedVariant = decodeKey(event.target.value);
   rerenderSelection();
 });
+$("analysis-cr").addEventListener("change", (event) => {
+  selectedCr = event.target.value || "all";
+  selectedVariant = "";
+  rerenderSelection();
+});
 $("clear-analysis").addEventListener("click", () => {
   selectedClass = "";
   selectedDeck = "";
   selectedVariant = "";
+  selectedCr = "all";
   rerenderSelection();
 });
 $("trend-class").addEventListener("change", (event) => {
